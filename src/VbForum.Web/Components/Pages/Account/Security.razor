@@ -44,8 +44,10 @@
     public sealed class MailInput { public string Email { get; set; } = ""; public string Password { get; set; } = ""; }
 
     [CascadingParameter] public HttpContext HttpContext { get; set; } = default!;
-    [SupplyParameterFromForm(FormName = "password")] public PwInput Pw { get; set; } = new();
-    [SupplyParameterFromForm(FormName = "email")] public MailInput Mail { get; set; } = new();
+    [SupplyParameterFromForm(FormName = "password", Name = "Pw")] public PwInput? PwForm { get; set; }
+    private PwInput Pw => PwForm ??= new();
+    [SupplyParameterFromForm(FormName = "email", Name = "Mail")] public MailInput? MailForm { get; set; }
+    private MailInput Mail => MailForm ??= new();
 
     private bool _loaded, _isEmail;
     private ForumUser? _user;
@@ -72,7 +74,7 @@
         var row = await Users.GetAsync(_user.UserId);
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme,
             AuthSetup.CreatePrincipal(row!.UserId, row.DisplayName, AuthService.Stamp(row)), new AuthenticationProperties { IsPersistent = true });
-        Pw = new();
+        PwForm = new();
         _message = "Dein Passwort wurde geändert.";
     }
 
@@ -81,7 +83,7 @@
         var err = await Auth.ChangeEmailAsync(_user!.UserId, Mail.Password, Mail.Email);
         if (err != null) { _error = err; return; }
         _email = Mail.Email.Trim();
-        Mail = new();
+        MailForm = new();
         _message = "Deine E-Mail-Adresse wurde geändert.";
     }
 }

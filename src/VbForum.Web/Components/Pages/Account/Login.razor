@@ -55,7 +55,8 @@
     }
 
     [CascadingParameter] public HttpContext HttpContext { get; set; } = default!;
-    [SupplyParameterFromForm] public LoginInput Input { get; set; } = new();
+    [SupplyParameterFromForm(Name = "Input")] public LoginInput? InputForm { get; set; }
+    private LoginInput Input => InputForm ??= new();
     [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
     [SupplyParameterFromQuery] public string? Msg { get; set; }
 

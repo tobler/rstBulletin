@@ -34,14 +34,14 @@
             }
         </div>
 
-        @foreach (var section in _sections)
+        @foreach (var sec in _sections)
         {
-            <section class="card" aria-labelledby="cat-@section.Id">
+            <section class="card" aria-labelledby="cat-@sec.Id">
                 <div class="card-head">
-                    <h2 id="cat-@section.Id">@section.Title</h2>
-                    <span class="small muted">@section.Forums.Count @(section.Forums.Count == 1 ? "Forum" : "Foren")</span>
+                    <h2 id="cat-@sec.Id">@sec.Title</h2>
+                    <span class="small muted">@sec.Forums.Count @(sec.Forums.Count == 1 ? "Forum" : "Foren")</span>
                 </div>
-                @foreach (var s in section.Forums)
+                @foreach (var s in sec.Forums)
                 {
                     <ForumRow Summary="s" />
                 }

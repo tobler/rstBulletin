@@ -83,7 +83,8 @@
     }
 
     [CascadingParameter] public HttpContext HttpContext { get; set; } = default!;
-    [SupplyParameterFromForm] public RegisterInput Input { get; set; } = new();
+    [SupplyParameterFromForm(Name = "Input")] public RegisterInput? InputForm { get; set; }
+    private RegisterInput Input => InputForm ??= new();
 
     private BoardSettings? _settings;
     private string? _error, _stamp;
