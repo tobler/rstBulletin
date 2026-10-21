@@ -1,0 +1,109 @@
+@page "/admin/permcheck"
+@attribute [Authorize(Policy = "Admin")]
+@rendermode InteractiveServer
+@inject BoardCache Cache
+@inject UserRepository Users
+
+<PageTitle>Rechte prüfen – Administration</PageTitle>
+
+<main class="page container">
+    <AdminShell Active="permcheck" Title="Rechte prüfen" Subtitle="Was sieht ein Gast oder ein bestimmter Benutzer in welchem Forum – und warum?">
+        <section class="card card-pad stack">
+            <div class="row">
+                <input class="input" style="flex:1 1 240px" placeholder="Benutzername (leer = Gast)" @bind="_name" @bind:event="oninput"
+                       list="pc-names" @onkeyup="Suggest" aria-label="Benutzername" />
+                <datalist id="pc-names">@foreach (var (_, n) in _suggest) { <option value="@n"></option> }</datalist>
+                <button type="button" class="btn btn-primary" @onclick="Check">Prüfen</button>
+            </div>
+            @if (_err != null) { <div class="field-error">@_err</div> }
+            @if (_snap != null)
+            {
+                <p class="small muted" style="margin:0">
+                    Bitwerte: @(_snap.Bits.LoadedFromDatastore ? "aus vb_datastore gelesen" : "Standardwerte (vb_datastore nicht lesbar)") ·
+                    „Beiträge lesen“ = @_snap.Bits.Perm(ForumPerm.CanViewThreads) ·
+                    Gästegruppe = #@_snap.Settings.GuestGroupId (@_snap.Groups.GetValueOrDefault(_snap.Settings.GuestGroupId)?.DisplayTitle) ·
+                    Board-Standard gesperrte Foren: @(_snap.ShowPrivateForums > 0 ? "anzeigen" : "ausblenden")
+                </p>
+            }
+        </section>
+
+        @if (_user != null && _perms != null)
+        {
+            <section class="card">
+                <div class="card-head">
+                    <h2>@(_user.IsGuest ? "Gast (nicht angemeldet)" : _user.Username)</h2>
+                    <span class="small muted">
+                        @if (_user.IsAdmin) { <span>Administrator – darf alles</span> }
+                        else { <span>Gruppen: @string.Join(", ", Groups().Select(g => $"{_snap!.Groups.GetValueOrDefault(g)?.DisplayTitle ?? "?"} (#{g})"))</span> }
+                    </span>
+                </div>
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead><tr><th>Forum</th><th>Anzeige</th><th>Titel</th><th>Lesen</th><th>Andere</th><th>Antworten</th><th>Neues Thema</th><th>Rechte kommen von</th></tr></thead>
+                        <tbody>
+                            @foreach (var f in _snap!.Flatten())
+                            {
+                                var see = _perms.CanSeeForum(_user, f);
+                                var locked = _perms.ShowsLocked(_user, f);
+                                <tr>
+                                    <td style="padding-left:@(12 + f.Depth * 20)px"><strong>@f.DisplayTitle</strong> <span class="small muted">#@f.ForumId</span></td>
+                                    <td>@(see ? "sichtbar" : locked ? (_perms.ShowsLockedTitles(_user, f) ? "Schloss + Titel" : "Schloss") : "unsichtbar")</td>
+                                    <td>@Yn(_perms.CanListThreads(_user, f))</td>
+                                    <td>@Yn(_perms.CanReadThreads(_user, f))</td>
+                                    <td>@Yn(!f.IsCategory && see && _perms.CanViewOthers(_user, f))</td>
+                                    <td>@Yn(!f.IsCategory && see && !_user.IsGuest && _perms.Has(_user, f, ForumPerm.CanReplyOthers))</td>
+                                    <td>@Yn(_perms.CanPostThread(_user, f))</td>
+                                    <td class="small muted">@Source(f)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="list-foot"><span>„Lesen“ braucht „Forum sehen“ (auch in allen übergeordneten Foren) und „Beiträge lesen“. Ohne „Andere“ sieht man nur eigene Themen.</span></div>
+            </section>
+        }
+    </AdminShell>
+</main>
+
+@code {
+    private BoardSnapshot? _snap;
+    private Permissions? _perms;
+    private ForumUser? _user;
+    private string? _name, _err;
+    private List<(long, string)> _suggest = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _snap = await Cache.GetAsync();
+        _perms = new Permissions(_snap);
+        _user = ForumUser.Guest;
+    }
+
+    private async Task Suggest() => _suggest = await Users.SearchNamesAsync(_name ?? "", 8);
+
+    private async Task Check()
+    {
+        _err = null;
+        _snap = await Cache.GetAsync();
+        _perms = new Permissions(_snap);
+        if (string.IsNullOrWhiteSpace(_name)) { _user = ForumUser.Guest; return; }
+        var row = await Users.GetByNameAsync(_name.Trim());
+        if (row == null) { _err = "Benutzer nicht gefunden."; return; }
+        _user = ForumUser.From(row, _snap);
+    }
+
+    private IEnumerable<int> Groups() => _user!.IsGuest ? new[] { _snap!.Settings.GuestGroupId } : _user.GroupIds;
+
+    private static MarkupString Yn(bool b) => new(b ? "<span class=\"perm-cell yes\">✓</span>" : "<span class=\"perm-cell no\">–</span>");
+
+    private string Source(Forum f)
+    {
+        if (_user!.IsAdmin) return "Administrator";
+        return string.Join(" · ", Groups().Select(g =>
+        {
+            var src = _perms!.InheritedFrom(g, f);
+            var name = _snap!.Groups.GetValueOrDefault(g)?.DisplayTitle ?? $"#{g}";
+            return src == f.ForumId ? $"{name}: eigene" : src > 0 ? $"{name}: von {_snap.Forum(src)?.DisplayTitle}" : $"{name}: Gruppenstandard";
+        }));
+    }
+}

@@ -37,7 +37,7 @@
                 <h1>@_thread.DisplayTitle</h1>
                 <p>
                     Gestartet von @HtmlUtil.CleanTitle(_thread.PostUsername) · @ForumTime.Relative(_thread.Dateline) ·
-                    @ForumTime.Number(_thread.ReplyCount + 1) Beiträge · @ForumTime.Number(_thread.Views) Aufrufe
+                    @ForumTime.Number(_thread.ReplyCount + 1) @(_thread.ReplyCount == 0 ? "Beitrag" : "Beiträge") · @ForumTime.Number(_thread.Views) Aufrufe
                     @if (!_thread.IsOpen) { <span class="pill" style="margin-left:6px">Geschlossen</span> }
                     @if (_thread.IsSticky) { <span class="pill pill-warn" style="margin-left:6px">Angepinnt</span> }
                     @if (_thread.IsModerated) { <span class="pill pill-accent" style="margin-left:6px">Wartet auf Freigabe</span> }

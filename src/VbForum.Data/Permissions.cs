@@ -93,24 +93,27 @@ public sealed class Permissions(BoardSnapshot s)
     public bool ShowsLocked(ForumUser u, Forum f) =>
         !CanSeeForum(u, f) && f.IsActive && string.IsNullOrEmpty(f.Password) &&
         (f.Parent == null || CanSeeForum(u, f.Parent)) &&
-        (f.ShowPrivate == 2 || (f.ShowPrivate == 0 && s.ShowPrivateForums > 0));
+        (f.ShowPrivate >= 2 || (f.ShowPrivate == 0 && s.ShowPrivateForums > 0));
+
+    /// <summary>Gesperrtes Forum, dessen Thementitel trotzdem angezeigt werden (showprivate = 3; vB behandelt 3 wie 2).</summary>
+    public bool ShowsLockedTitles(ForumUser u, Forum f) => !f.IsCategory && f.ShowPrivate == 3 && ShowsLocked(u, f);
 
     /// <summary>In der Übersicht aufführen – entweder normal oder mit Schloss.</summary>
     public bool IsListed(ForumUser u, Forum f) => CanSeeForum(u, f) || ShowsLocked(u, f);
 
-    /// <summary>Themenliste (Titel) ansehen: „Forum sehen“ genügt (wie vB).</summary>
-    public bool CanListThreads(ForumUser u, Forum f) => CanSeeForum(u, f) && !f.IsCategory;
+    /// <summary>Themenliste (Titel) ansehen: „Forum sehen“ genügt (wie vB) – oder gesperrtes Forum mit Titelanzeige.</summary>
+    public bool CanListThreads(ForumUser u, Forum f) => !f.IsCategory && (CanSeeForum(u, f) || ShowsLockedTitles(u, f));
 
-    /// <summary>Inhalte von Themen lesen: zusätzlich „Themen lesen“ (canviewthreads).</summary>
+    /// <summary>Inhalte von Themen lesen: „Forum sehen“ und zusätzlich „Beiträge lesen“ (canviewthreads).</summary>
     public bool CanReadThreads(ForumUser u, Forum f) =>
-        CanListThreads(u, f) && Has(u, f, ForumPerm.CanViewThreads);
+        !f.IsCategory && CanSeeForum(u, f) && Has(u, f, ForumPerm.CanViewThreads);
 
     /// <summary>Ohne canviewothers sieht man nur eigene Themen.</summary>
     public bool CanViewOthers(ForumUser u, Forum f) => Has(u, f, ForumPerm.CanViewOthers);
 
     /// <summary>Titel eines Themas sehen (Themenliste, Kopf der Themenseite).</summary>
     public bool CanSeeThread(ForumUser u, Forum f, ForumThread t) =>
-        CanListThreads(u, f) && (CanViewOthers(u, f) || (!u.IsGuest && t.PostUserId == u.UserId)) &&
+        CanListThreads(u, f) && (CanViewOthers(u, f) || ShowsLockedTitles(u, f) || (!u.IsGuest && t.PostUserId == u.UserId)) &&
         (t.Visible == 1 || IsModerator(u, f) || (t.Visible == 0 && !u.IsGuest && t.PostUserId == u.UserId));
 
     /// <summary>Beiträge eines Themas lesen.</summary>

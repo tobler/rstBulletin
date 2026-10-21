@@ -60,7 +60,7 @@
             <h2 id="fe-title" class="card-title">@(_edit.ForumId > 0 ? "Forum bearbeiten" : _edit.IsCategory ? "Neue Kategorie" : "Neues Forum")</h2>
             @if (_modalErr != null) { <div class="alert alert-err">@_modalErr</div> }
             <div class="field"><label for="fe-t">Titel</label><input id="fe-t" @bind="_edit.Title" maxlength="100" /></div>
-            <div class="field"><label for="fe-d">Beschreibung</label><textarea id="fe-d" @bind="_edit.Description" rows="2"></textarea></div>
+            <div class="field"><label for="fe-d">Beschreibung</label><textarea id="fe-d" @bind="_edit.Description" rows="3"></textarea><span class="hint">HTML ist erlaubt (z. B. &lt;br&gt;, &lt;b&gt;, Links).</span></div>
             <div class="form-grid">
                 <div class="field">
                     <label for="fe-p">Übergeordnet</label>
@@ -80,8 +80,9 @@
                     <option value="0">Board-Standard (@(_snap.ShowPrivateForums > 0 ? "mit Schloss anzeigen" : "ausblenden"))</option>
                     <option value="1">Komplett ausblenden</option>
                     <option value="2">Mit Schloss anzeigen (kein Zugriff)</option>
+                    <option value="3">Mit Schloss + Thementitel (Beiträge nicht lesbar)</option>
                 </select>
-                <span class="hint">Wer das Recht „Forum sehen“ nicht hat, sieht das Forum je nach Einstellung gar nicht oder nur als gesperrten Eintrag.</span>
+                <span class="hint">Wer das Recht „Forum sehen“ nicht hat, sieht das Forum je nach Einstellung gar nicht, als gesperrten Eintrag (mit Themen- und Beitragszahl) oder zusätzlich mit den Thementiteln. Das alte vBulletin zeigt „+ Thementitel“ wie „mit Schloss“ an.</span>
             </div>
             <div class="field"><label for="fe-l">Weiterleitungs-Link (optional)</label><input id="fe-l" @bind="_edit.Link" placeholder="https://…" /><span class="hint">Macht das Forum zu einem Link auf eine andere Seite.</span></div>
             <div class="stack" style="gap:0">

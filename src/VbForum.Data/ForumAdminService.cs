@@ -31,7 +31,7 @@ public sealed class ForumAdminService(Db db, BoardCache cache)
 
         public static ForumEdit From(Forum f, Bitfields b) => new()
         {
-            ForumId = f.ForumId, Title = f.DisplayTitle, Description = f.DisplayDescription, ParentId = f.ParentId,
+            ForumId = f.ForumId, Title = f.DisplayTitle, Description = f.Description, ParentId = f.ParentId,
             DisplayOrder = f.DisplayOrder, IsCategory = f.IsCategory, Active = f.IsActive,
             AllowPosting = (f.Options & b.Opt(ForumOption.AllowPosting)) != 0,
             ModerateThreads = (f.Options & b.Opt(ForumOption.ModerateNewThread)) != 0,
@@ -80,7 +80,7 @@ public sealed class ForumAdminService(Db db, BoardCache cache)
             order = e.DisplayOrder,
             options,
             link = e.Link.Trim(),
-            sp = Math.Clamp(e.ShowPrivate, 0, 2)
+            sp = Math.Clamp(e.ShowPrivate, 0, 3)
         };
         await using var c = await db.OpenAsync();
         int id = e.ForumId;

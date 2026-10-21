@@ -5,7 +5,11 @@
             <Icon Name="@(Summary.Locked ? "lock" : f.IsCategory ? "folder" : !string.IsNullOrEmpty(f.Link) ? "link" : "chat")" Size="20" />
         </span>
         <div class="stack" style="gap:4px;min-width:0">
-            @if (Summary.Locked)
+            @if (Summary.Locked && Summary.TitlesVisible)
+            {
+                <a href="@Summary.Url" class="forum-title">@f.DisplayTitle <span class="pill" style="margin-left:4px;vertical-align:2px">Nur Titel</span></a>
+            }
+            else if (Summary.Locked)
             {
                 <span class="forum-title" style="color:var(--muted-2)">@f.DisplayTitle <span class="pill" style="margin-left:4px;vertical-align:2px">Kein Zugriff</span></span>
             }
@@ -15,7 +19,7 @@
             }
             @if (!string.IsNullOrWhiteSpace(f.DisplayDescription))
             {
-                <span class="forum-desc">@f.DisplayDescription</span>
+                <span class="forum-desc">@((MarkupString)f.DescriptionHtml)</span>
             }
             @if (Summary.VisibleChildren.Count > 0)
             {
@@ -30,14 +34,23 @@
     </div>
     @if (Summary.Locked)
     {
-        @if (Summary.ShowCounts)
+        <div class="forum-stats">
+            <div><strong>@ForumTime.Number(Summary.Threads)</strong>Themen</div>
+            <div><strong>@ForumTime.Number(Summary.Posts)</strong>Beiträge</div>
+        </div>
+        @if (Summary.TitlesVisible && Summary.LastThreadId > 0)
         {
-            <div class="forum-stats">
-                <div><strong>@ForumTime.Number(Summary.Threads)</strong>Themen</div>
-                <div><strong>@ForumTime.Number(Summary.Posts)</strong>Beiträge</div>
+            <div class="forum-last">
+                <div class="stack" style="gap:2px;min-width:0">
+                    <a href="@Links.Thread(Summary.LastThreadId, Summary.LastThread)" class="t">@Summary.LastThread</a>
+                    <span class="small muted">@ForumTime.Relative(Summary.LastPost)</span>
+                </div>
             </div>
         }
-        <div class="forum-last"><span class="muted">Nur für berechtigte Mitglieder</span></div>
+        else
+        {
+            <div class="forum-last"><span class="muted">Nur für berechtigte Mitglieder</span></div>
+        }
     }
     else if (string.IsNullOrEmpty(f.Link))
     {

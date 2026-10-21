@@ -53,6 +53,26 @@ public static partial class HtmlUtil
         return WebUtility.HtmlDecode(s);
     }
 
+    /// <summary>
+    /// Vom Admin gepflegtes HTML (z. B. Forenbeschreibung) ausgeben. Vertrauenswürdig, aber Skripte und
+    /// Event-Handler werden sicherheitshalber entfernt. Numerische Entities bleiben (der Browser löst sie auf).
+    /// </summary>
+    public static string SafeAdminHtml(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html)) return "";
+        var s = System.Text.RegularExpressions.Regex.Replace(html, @"<\s*(script|style|iframe|object|embed)\b[\s\S]*?(</\s*\1\s*>|$)", "",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"\s+on\w+\s*=\s*(""[^""]*""|'[^']*'|[^\s>]+)", "",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"(href|src)\s*=\s*([""']?)\s*javascript:", "$1=$2#",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return s;
+    }
+
+    /// <summary>Text ohne HTML-Tags (z. B. für Tooltips).</summary>
+    public static string StripTags(string? html) =>
+        string.IsNullOrEmpty(html) ? "" : WebUtility.HtmlDecode(System.Text.RegularExpressions.Regex.Replace(html, "<[^>]+>", " ")).Trim();
+
     /// <summary>Gegenstück zu CleanTitle: so legt vB Titel/Benutzernamen ab (htmlspecialchars_uni).</summary>
     public static string ToVbStoredTitle(string s)
     {

@@ -7,7 +7,7 @@ namespace VbForum.Web.Components.Shared;
 
 /// <summary>Aggregierte Werte eines Forums inkl. aller sichtbaren Unterforen (wie die vB-Startseite).</summary>
 public sealed record ForumSummary(Forum Forum, long Threads, long Posts, long LastPost, long LastThreadId, string LastThread,
-    string LastPoster, long LastPosterId, long LastPostId, bool Unread, List<Forum> VisibleChildren, bool Locked = false, bool ShowCounts = true)
+    string LastPoster, long LastPosterId, long LastPostId, bool Unread, List<Forum> VisibleChildren, bool Locked = false, bool TitlesVisible = false)
 {
     public string Url => Links.Forum(Forum);
 
@@ -15,9 +15,11 @@ public sealed record ForumSummary(Forum Forum, long Threads, long Posts, long La
     {
         if (perms.ShowsLocked(u, f))
         {
-            // Sichtbar, aber ohne Zugriff: keine letzten Themen, Zähler nur wenn das Board es so eingestellt hat
-            bool counts = perms.Snapshot.ShowPrivateForums == 2;
-            return new ForumSummary(f, f.ThreadCount, f.ReplyCount, 0, 0, "", "", 0, 0, false, new(), Locked: true, ShowCounts: counts);
+            // Sichtbar, aber ohne Zugriff: Zähler immer; letztes Thema nur, wenn Thementitel freigegeben sind
+            if (perms.ShowsLockedTitles(u, f))
+                return new ForumSummary(f, f.ThreadCount, f.ReplyCount, f.LastPost, f.LastThreadId, HtmlUtil.CleanTitle(f.LastThread), "", 0, 0,
+                    false, new(), Locked: true, TitlesVisible: true);
+            return new ForumSummary(f, f.ThreadCount, f.ReplyCount, 0, 0, "", "", 0, 0, false, new(), Locked: true);
         }
         var visible = new List<Forum> { f };
         void Walk(Forum x) { foreach (var c in x.Children.Where(c => perms.CanSeeForum(u, c))) { visible.Add(c); Walk(c); } }

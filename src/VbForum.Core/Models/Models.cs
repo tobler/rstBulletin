@@ -26,7 +26,8 @@ public sealed class Forum
     public string Link { get; set; } = "";
     public string DefaultSortField { get; set; } = "lastpost";
     public string DefaultSortOrder { get; set; } = "desc";
-    /// <summary>vB: 0 = Board-Standard, 1 = für Gruppen ohne Zugriff ausblenden, 2 = mit Schloss anzeigen.</summary>
+    /// <summary>vB: 0 = Board-Standard, 1 = für Gruppen ohne Zugriff ausblenden, 2 = mit Schloss anzeigen,
+    /// 3 = mit Schloss und Thementiteln (eigene Erweiterung; vB zeigt 3 wie 2).</summary>
     public int ShowPrivate { get; set; }
 
     // vom ForumCache befüllt
@@ -38,11 +39,26 @@ public sealed class Forum
 
     public string DisplayTitle => HtmlUtil.CleanTitle(Title);
     public string DisplayDescription => HtmlUtil.CleanTitle(Description);
+    /// <summary>Beschreibung als HTML (wird nur im Admin gepflegt, vB erlaubt dort HTML).</summary>
+    public string DescriptionHtml => HtmlUtil.SafeAdminHtml(Description);
     public string Slug => HtmlUtil.Slugify(Title);
 
-    /// <summary>parentlist z. B. "12,3,-1" → [12, 3] (inkl. sich selbst, vom Kind zur Wurzel).</summary>
-    public IEnumerable<int> ParentIds => ParentList.Split(',', StringSplitOptions.RemoveEmptyEntries)
-        .Select(s => int.TryParse(s, out var i) ? i : -1).Where(i => i > 0);
+    /// <summary>Kette vom Forum selbst bis zur Wurzel, z. B. [12, 3]. Wird über die geladenen Eltern bestimmt
+    /// (robust gegen eine veraltete parentlist), sonst aus parentlist "12,3,-1".</summary>
+    public IEnumerable<int> ParentIds
+    {
+        get
+        {
+            if (Parent != null || ParentId <= 0)
+            {
+                var list = new List<int>();
+                for (var f = this; f != null && list.Count < 64; f = f.Parent) list.Add(f.ForumId);
+                return list;
+            }
+            return ParentList.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => int.TryParse(s, out var i) ? i : -1).Where(i => i > 0);
+        }
+    }
 }
 
 public sealed class ForumThread

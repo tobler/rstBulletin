@@ -39,7 +39,7 @@
         <div class="page-head">
             <div>
                 <h1>@_forum.DisplayTitle</h1>
-                @if (!string.IsNullOrWhiteSpace(_forum.DisplayDescription)) { <p>@_forum.DisplayDescription</p> }
+                @if (!string.IsNullOrWhiteSpace(_forum.Description)) { <p>@((MarkupString)_forum.DescriptionHtml)</p> }
             </div>
             <div class="row">
                 @if (!_user!.IsGuest && !_forum.IsCategory)
@@ -188,7 +188,7 @@
         var perms = new Permissions(_snap);
         var f = _snap.Forum(Id);
         if (f == null) return;
-        if (!perms.CanSeeForum(_user, f))
+        if (!perms.CanSeeForum(_user, f) && !perms.ShowsLockedTitles(_user, f))
         {
             if (perms.ShowsLocked(_user, f)) _lockedForum = f;
             return;
@@ -202,6 +202,7 @@
 
         _canPost = perms.CanPostThread(_user, f);
         _titlesOnly = !perms.CanReadThreads(_user, f);
+        _canPost = _canPost && !_titlesOnly;
         if (!perms.CanListThreads(_user, f))
         {
             _result = new PagedResult<ForumThread>(Array.Empty<ForumThread>(), 0, 1, 1);
@@ -217,7 +218,7 @@
         {
             ForumId = f.ForumId, Page = _page, PageSize = _snap.Settings.ThreadsPerPage, Sort = sort, Desc = Desc, OnlyUnread = Unread,
             IncludeModerated = mod, IncludeDeleted = mod,
-            OnlyUserId = perms.CanViewOthers(_user, f) ? null : _user.UserId
+            OnlyUserId = perms.CanViewOthers(_user, f) || perms.ShowsLockedTitles(_user, f) ? null : (_user.IsGuest ? -1 : _user.UserId)
         }, _user.UserId, Math.Max(cutoff, reads.GetValueOrDefault(f.ForumId)));
     }
 }
