@@ -1,0 +1,110 @@
+@page "/admin"
+@attribute [Authorize(Policy = "Admin")]
+@rendermode InteractiveServer
+@inject AdminStats Stats
+@inject BoardCache Cache
+@inject UserRepository Users
+@inject TokenRepository Audit
+@inject Schema Schema
+
+<PageTitle>Administration</PageTitle>
+
+<main class="page container">
+    <AdminShell Active="dash" Title="Administration" Subtitle="@_snap?.Settings.BoardName">
+        @if (_o == null)
+        {
+            <div class="card empty">Lade …</div>
+        }
+        else
+        {
+            @if (_o.Moderated > 0)
+            {
+                <div class="alert alert-warn row" style="justify-content:space-between">
+                    <span><strong>@_o.Moderated</strong> Beiträge/Themen warten auf Freigabe.</span>
+                    <a class="btn btn-sm" href="/admin/moderation">Zur Moderation</a>
+                </div>
+            }
+            @if (!_fulltext)
+            {
+                <div class="alert alert-info row" style="justify-content:space-between">
+                    <span>Für eine schnelle Suche fehlt noch der Volltextindex.</span>
+                    <a class="btn btn-sm" href="/admin/database">Einrichten</a>
+                </div>
+            }
+            <div class="kpi">
+                <div class="stat"><div class="label">Themen</div><div class="value">@ForumTime.Number(_o.Threads)</div></div>
+                <div class="stat"><div class="label">Beiträge</div><div class="value">@ForumTime.Number(_o.Posts)</div></div>
+                <div class="stat"><div class="label">Benutzer</div><div class="value">@ForumTime.Number(_o.Users)</div></div>
+                <div class="stat"><div class="label">Neue Benutzer (7 Tage)</div><div class="value">@ForumTime.Number(_o.NewUsers7d)</div></div>
+                <div class="stat"><div class="label">Beiträge (24 h)</div><div class="value">@ForumTime.Number(_o.Posts24h)</div></div>
+                <div class="stat"><div class="label">Online (15 min)</div><div class="value">@ForumTime.Number(_o.Online15m)</div></div>
+            </div>
+
+            <section class="card card-pad stack">
+                <h2 class="card-title">Beiträge pro Tag (30 Tage)</h2>
+                @{ var max = Math.Max(1, _perDay.Max(x => x.Posts)); }
+                <div role="img" aria-label="Balkendiagramm: Beiträge pro Tag der letzten 30 Tage" style="display:flex;align-items:flex-end;gap:3px;height:140px;padding-top:10px">
+                    @foreach (var (day, n) in _perDay)
+                    {
+                        <div title="@day.ToString("dd.MM.") – @n Beiträge" style="flex:1;min-width:4px;height:@(Math.Max(2, n * 130 / max))px;background:var(--accent);border-radius:3px 3px 0 0;opacity:.85"></div>
+                    }
+                </div>
+                <div class="row small muted" style="justify-content:space-between"><span>@_perDay.First().Day.ToString("dd.MM.")</span><span>max. @max / Tag</span><span>@_perDay.Last().Day.ToString("dd.MM.")</span></div>
+            </section>
+
+            <div class="side-layout">
+                <section class="card" style="flex:1 1 320px">
+                    <div class="card-head"><h2>Neueste Benutzer</h2><a class="small" href="/admin/users?sort=joindate">Alle</a></div>
+                    <table class="table">
+                        <tbody>
+                            @foreach (var u in _recent)
+                            {
+                                <tr>
+                                    <td><a href="/admin/users/@u.UserId">@u.DisplayName</a><div class="small muted">@u.Email</div></td>
+                                    <td class="small muted nowrap">@ForumTime.Relative(u.JoinDate)</td>
+                                    <td class="num small">@u.Posts</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+                <section class="card" style="flex:1 1 320px">
+                    <div class="card-head"><h2>Letzte Admin-Aktionen</h2><a class="small" href="/admin/log">Protokoll</a></div>
+                    <table class="table">
+                        <tbody>
+                            @foreach (var a in _audit)
+                            {
+                                <tr><td class="small"><strong>@a.Username</strong> · @a.Action<div class="muted ellipsis" style="max-width:260px">@a.Target</div></td><td class="small muted nowrap">@ForumTime.Relative(a.Dateline)</td></tr>
+                            }
+                            @if (_audit.Count == 0) { <tr><td class="muted small">Noch keine Einträge.</td></tr> }
+                        </tbody>
+                    </table>
+                </section>
+            </div>
+
+            <section class="card card-pad small muted">
+                Datenbank: @_o.ServerVersion · Bitfelder: @(_snap!.Bits.LoadedFromDatastore ? "aus vb_datastore gelesen" : "vB-4-Standardwerte") ·
+                Volltextindex: @(_fulltext ? "vorhanden" : "fehlt") · Private Nachrichten: @ForumTime.Number(_o.Pms)
+            </section>
+        }
+    </AdminShell>
+</main>
+
+@code {
+    private BoardSnapshot? _snap;
+    private AdminStats.Overview? _o;
+    private List<(DateTime Day, long Posts)> _perDay = new();
+    private List<UserRow> _recent = new();
+    private List<TokenRepository.AuditEntry> _audit = new();
+    private bool _fulltext;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _snap = await Cache.GetAsync();
+        _o = await Stats.OverviewAsync();
+        _perDay = await Stats.PostsPerDayAsync(30);
+        _recent = await Users.RecentAsync(8);
+        _audit = await Audit.AuditAsync(8);
+        _fulltext = await Schema.HasPostFulltextAsync();
+    }
+}

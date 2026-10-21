@@ -1,0 +1,25 @@
+@inject NavigationManager Nav
+
+@if (_authenticated)
+{
+    <main class="page container">
+        <div class="card card-pad narrow">
+            <h1 class="card-title">Kein Zugriff</h1>
+            <p class="muted">Für diesen Bereich fehlen dir die Rechte.</p>
+            <p><a href="/" class="btn">Zur Startseite</a></p>
+        </div>
+    </main>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+    private bool _authenticated;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var s = AuthState == null ? null : await AuthState;
+        _authenticated = s?.User.Identity?.IsAuthenticated == true;
+        if (!_authenticated)
+            Nav.NavigateTo("/login?returnUrl=" + Uri.EscapeDataString("/" + Nav.ToBaseRelativePath(Nav.Uri)), forceLoad: true);
+    }
+}

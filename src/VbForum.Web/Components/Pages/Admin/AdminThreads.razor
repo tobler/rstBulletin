@@ -1,0 +1,197 @@
+@page "/admin/threads"
+@attribute [Authorize(Policy = "Admin")]
+@rendermode InteractiveServer
+@inject ThreadRepository Threads
+@inject ModerationService Mod
+@inject BoardCache Cache
+@inject CurrentUser Current
+@inject TokenRepository Audit
+
+<PageTitle>Themen – Administration</PageTitle>
+
+<main class="page container">
+    <AdminShell Active="threads" Title="Themen" Subtitle="Suchen, verschieben, schließen und löschen">
+        @if (_msg != null) { <div class="alert alert-ok" role="status">@_msg</div> }
+
+        <section class="card card-pad stack" style="gap:12px">
+            <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px">
+                <div class="field" style="grid-column:span 2"><label for="t-q">Titel enthält</label><input id="t-q" @bind="_q.Title" @onkeyup="Key" /></div>
+                <div class="field">
+                    <label for="t-f">Forum</label>
+                    <select id="t-f" value="@(_q.ForumId?.ToString() ?? "")" @onchange="e => _q.ForumId = int.TryParse(e.Value?.ToString(), out var f) ? f : null">
+                        <option value="">Alle</option>
+                        @foreach (var f in _snap?.Flatten() ?? Enumerable.Empty<Forum>()) { <option value="@f.ForumId">@(new string(' ', f.Depth * 3))@f.DisplayTitle</option> }
+                    </select>
+                </div>
+                <div class="field"><label for="t-u">Erstellt von</label><input id="t-u" @bind="_q.Username" @onkeyup="Key" /></div>
+                <div class="field">
+                    <label for="t-v">Status</label>
+                    <select id="t-v" value="@(_q.Visible?.ToString() ?? "")" @onchange="e => _q.Visible = int.TryParse(e.Value?.ToString(), out var v) ? v : null">
+                        <option value="">Alle</option><option value="1">Sichtbar</option><option value="0">Wartet auf Freigabe</option><option value="2">Gelöscht</option>
+                    </select>
+                </div>
+                <div class="field"><label for="t-from">Erstellt ab</label><input id="t-from" type="date" @bind="_from" /></div>
+                <div class="field"><label for="t-to">Erstellt bis</label><input id="t-to" type="date" @bind="_to" /></div>
+                <div class="field">
+                    <label for="t-s">Sortierung</label>
+                    <select id="t-s" @bind="_q.Sort"><option value="lastpost">Letzte Antwort</option><option value="dateline">Erstellt</option><option value="replycount">Antworten</option><option value="views">Aufrufe</option><option value="title">Titel</option></select>
+                </div>
+            </div>
+            <div class="row" style="justify-content:space-between">
+                <label class="check"><input type="checkbox" @bind="_q.Desc" />absteigend</label>
+                <button type="button" class="btn btn-primary" @onclick="() => SearchAsync(1)"><Icon Name="search" />Suchen</button>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="toolbar">
+                <span class="small"><strong>@ForumTime.Number(_result?.Total ?? 0)</strong> Themen @if (_sel.Count > 0) { <text>· @_sel.Count ausgewählt</text> }</span>
+                <div class="row" style="gap:6px">
+                    <button type="button" class="btn btn-sm" disabled="@(_sel.Count == 0)" @onclick='() => Bulk("close")'>Schließen</button>
+                    <button type="button" class="btn btn-sm" disabled="@(_sel.Count == 0)" @onclick='() => Bulk("open")'>Öffnen</button>
+                    <button type="button" class="btn btn-sm" disabled="@(_sel.Count == 0)" @onclick='() => Bulk("stick")'>Anpinnen</button>
+                    <button type="button" class="btn btn-sm" disabled="@(_sel.Count == 0)" @onclick='() => Bulk("unstick")'>Lösen</button>
+                    <button type="button" class="btn btn-sm" disabled="@(_sel.Count == 0)" @onclick='() => Bulk("approve")'>Freischalten</button>
+                    <select @bind="_target" aria-label="Zielforum" style="min-height:36px">
+                        @foreach (var f in _snap?.Flatten().Where(x => !x.IsCategory) ?? Enumerable.Empty<Forum>()) { <option value="@f.ForumId">@(new string(' ', f.Depth * 2))@f.DisplayTitle</option> }
+                    </select>
+                    <button type="button" class="btn btn-sm" disabled="@(_sel.Count == 0)" @onclick='() => Bulk("move")'>Verschieben</button>
+                    <button type="button" class="btn btn-sm" disabled="@(_sel.Count == 0)" @onclick='() => Bulk("delete")'>Löschen</button>
+                    <button type="button" class="btn btn-sm" disabled="@(_sel.Count == 0)" @onclick='() => Bulk("restore")'>Wiederherstellen</button>
+                    <button type="button" class="btn btn-sm btn-danger" disabled="@(_sel.Count == 0)" @onclick="() => _confirm = true">Endgültig löschen</button>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th style="width:32px"><input type="checkbox" aria-label="Alle auswählen" checked="@AllSel" @onchange="ToggleAll" /></th>
+                            <th>Thema</th><th class="hide-mobile">Forum</th><th class="num">Antw.</th><th class="num hide-mobile">Aufrufe</th><th class="hide-mobile">Letzte Antwort</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in _result?.Items ?? new List<ForumThread>())
+                        {
+                            <tr class="@(_sel.Contains(t.ThreadId) ? "sel" : "")">
+                                <td><input type="checkbox" aria-label="@t.DisplayTitle auswählen" checked="@_sel.Contains(t.ThreadId)" @onchange="() => Toggle(t.ThreadId)" /></td>
+                                <td>
+                                    <a href="@Links.Thread(t)" target="_blank" style="font-weight:600">@t.DisplayTitle</a>
+                                    <div class="row small muted" style="gap:6px">
+                                        <span>@HtmlUtil.CleanTitle(t.PostUsername) · @ForumTime.Date(t.Dateline)</span>
+                                        @if (t.IsSticky) { <span class="pill pill-warn">Angepinnt</span> }
+                                        @if (!t.IsOpen && !t.IsRedirect) { <span class="pill">Geschlossen</span> }
+                                        @if (t.IsRedirect) { <span class="pill">Weiterleitung</span> }
+                                        @if (t.IsModerated) { <span class="pill pill-accent">Freigabe</span> }
+                                        @if (t.IsDeleted) { <span class="pill pill-danger">Gelöscht</span> }
+                                    </div>
+                                </td>
+                                <td class="hide-mobile small">@HtmlUtil.CleanTitle(t.ForumTitle)</td>
+                                <td class="num">@ForumTime.Number(t.ReplyCount)</td>
+                                <td class="num hide-mobile">@ForumTime.Number(t.Views)</td>
+                                <td class="hide-mobile small nowrap">@ForumTime.Relative(t.LastPost)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="list-foot">
+                <span></span>
+                @if (_result != null && _result.PageCount > 1)
+                {
+                    <div class="row">
+                        <button type="button" class="btn btn-sm" disabled="@(_result.Page <= 1)" @onclick="() => SearchAsync(_result.Page - 1)">← Zurück</button>
+                        <span>Seite @_result.Page von @ForumTime.Number(_result.PageCount)</span>
+                        <button type="button" class="btn btn-sm" disabled="@(_result.Page >= _result.PageCount)" @onclick="() => SearchAsync(_result.Page + 1)">Weiter →</button>
+                    </div>
+                }
+            </div>
+        </section>
+    </AdminShell>
+</main>
+
+@if (_confirm)
+{
+    <div class="modal-back" @onclick="() => _confirm = false">
+        <div class="modal" role="alertdialog" aria-modal="true" @onclick:stopPropagation>
+            <h2 class="card-title">@_sel.Count Themen endgültig löschen?</h2>
+            <p class="muted" style="margin:0">Alle Beiträge, Anhänge, Abos und Lesemarkierungen dieser Themen werden aus der Datenbank entfernt. Das kann nicht rückgängig gemacht werden.</p>
+            <div class="form-actions">
+                <button type="button" class="btn" @onclick="() => _confirm = false">Abbrechen</button>
+                <button type="button" class="btn btn-danger" @onclick='() => Bulk("harddelete")'>Endgültig löschen</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "forum")] public int? ForumQ { get; set; }
+
+    private BoardSnapshot? _snap;
+    private ThreadRepository.AdminQuery _q = new();
+    private PagedResult<ForumThread>? _result;
+    private readonly HashSet<long> _sel = new();
+    private DateTime? _from, _to;
+    private int _target;
+    private bool _confirm;
+    private string? _msg;
+
+    private bool AllSel => _result != null && _result.Items.Count > 0 && _result.Items.All(t => _sel.Contains(t.ThreadId));
+
+    protected override async Task OnInitializedAsync()
+    {
+        _snap = await Cache.GetAsync();
+        _target = _snap.Flatten().FirstOrDefault(f => !f.IsCategory)?.ForumId ?? 0;
+        _q.ForumId = ForumQ;
+        await SearchAsync(1);
+    }
+
+    private async Task Key(KeyboardEventArgs e) { if (e.Key == "Enter") await SearchAsync(1); }
+
+    private async Task SearchAsync(int page)
+    {
+        _q.Page = page;
+        _q.FromUnix = _from is DateTime f ? ForumTime.ToUnix(f.Date) : null;
+        _q.ToUnix = _to is DateTime t ? ForumTime.ToUnix(t.Date.AddDays(1)) : null;
+        IReadOnlyCollection<int>? ids = null;
+        if (_q.ForumId is int fid && _snap!.Forum(fid) is { } root)
+            ids = new[] { root }.Concat(_snap.Descendants(root)).Select(x => x.ForumId).ToList();
+        _result = await Threads.AdminSearchAsync(_q, ids);
+    }
+
+    private void Toggle(long id) { if (!_sel.Remove(id)) _sel.Add(id); }
+
+    private void ToggleAll(ChangeEventArgs e)
+    {
+        if (_result == null) return;
+        if (e.Value is true) foreach (var t in _result.Items) _sel.Add(t.ThreadId); else foreach (var t in _result.Items) _sel.Remove(t.ThreadId);
+    }
+
+    private async Task Bulk(string action)
+    {
+        _confirm = false;
+        var me = await Current.GetAsync();
+        int n = 0;
+        foreach (var id in _sel.ToList())
+        {
+            var t = await Threads.GetAsync(id);
+            if (t == null) continue;
+            switch (action)
+            {
+                case "close": await Mod.SetOpenAsync(id, false); break;
+                case "open": await Mod.SetOpenAsync(id, true); break;
+                case "stick": await Mod.SetStickyAsync(id, true); break;
+                case "unstick": await Mod.SetStickyAsync(id, false); break;
+                case "approve": if (t.IsModerated) await Mod.ApproveThreadAsync(id); break;
+                case "move": await Mod.MoveAsync(id, _target); break;
+                case "delete": if (!t.IsDeleted) await Mod.SoftDeleteThreadAsync(me, t, ""); break;
+                case "restore": if (t.IsDeleted) await Mod.RestoreThreadAsync(id); break;
+                case "harddelete": await Mod.HardDeleteThreadAsync(id); break;
+            }
+            n++;
+        }
+        await Audit.LogAsync(me, "thread.bulk." + action, $"{n} Themen", "");
+        _msg = $"{n} Themen bearbeitet ({action}).";
+        _sel.Clear();
+        await SearchAsync(_q.Page);
+    }
+}

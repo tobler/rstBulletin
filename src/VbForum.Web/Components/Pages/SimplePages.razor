@@ -1,0 +1,31 @@
+@page "/offline"
+@page "/denied"
+@inject BoardCache Cache
+@inject NavigationManager Nav
+
+<PageTitle>@_title</PageTitle>
+<main class="page container">
+    <div class="card card-pad narrow stack" style="gap:10px">
+        <h1 class="card-title">@_title</h1>
+        <p class="muted" style="margin:0;white-space:pre-line">@_text</p>
+        <p style="margin:0"><a class="btn" href="/">Zur Startseite</a></p>
+    </div>
+</main>
+
+@code {
+    private string _title = "", _text = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Nav.Uri.Contains("/offline"))
+        {
+            _title = "Wartungsarbeiten";
+            try { _text = (await Cache.GetAsync()).Settings.OfflineMessage; } catch { _text = "Das Forum ist vorübergehend nicht erreichbar."; }
+        }
+        else
+        {
+            _title = "Kein Zugriff";
+            _text = "Für diese Seite fehlen dir die Rechte.";
+        }
+    }
+}

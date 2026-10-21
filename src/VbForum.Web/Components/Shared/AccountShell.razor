@@ -1,0 +1,30 @@
+<div class="row" style="gap:16px">
+    <Avatar UserId="User.UserId" Name="@User.Username" HasAvatar="User.HasAvatar" Revision="User.AvatarRevision" Size="64" />
+    <div class="stack" style="gap:2px">
+        <h1 style="font-size:24px">@User.Username</h1>
+        <span class="muted small"><a href="@Links.User(User.UserId, User.Username)">Öffentliches Profil ansehen</a></span>
+    </div>
+</div>
+<div class="side-layout">
+    <nav aria-label="Benutzerbereich" class="side-nav">
+        <a href="/account" class="@(Active == "profil" ? "active" : "")"><Icon Name="user" />Profil</a>
+        <a href="/account/password" class="@(Active == "password" ? "active" : "")"><Icon Name="lock" />Passwort</a>
+        <a href="/account/email" class="@(Active == "email" ? "active" : "")"><Icon Name="mail" />E-Mail-Adresse</a>
+        <a href="/account/subscriptions" class="@(Active == "subs" ? "active" : "")"><Icon Name="bell" />Abonnements</a>
+        <a href="/account/pm" class="@(Active == "pm" ? "active" : "")"><Icon Name="chat" />Private Nachrichten @if (User.PmUnread > 0) { <span class="count">@User.PmUnread</span> }</a>
+        <div class="sep"></div>
+        <form method="post" action="/logout" style="margin:0">
+            <AntiforgeryToken />
+            <button type="submit" class="btn btn-ghost" style="width:100%;justify-content:flex-start;color:var(--danger)"><Icon Name="logout" />Abmelden</button>
+        </form>
+    </nav>
+    <div class="side-content">
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ForumUser User { get; set; } = default!;
+    [Parameter] public string Active { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

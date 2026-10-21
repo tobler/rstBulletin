@@ -1,0 +1,199 @@
+@page "/admin/settings"
+@attribute [Authorize(Policy = "Admin")]
+@rendermode InteractiveServer
+@inject BoardCache Cache
+@inject MailService Mail
+@inject CurrentUser Current
+@inject TokenRepository Audit
+@inject ForumPaths Paths
+
+<PageTitle>Einstellungen – Administration</PageTitle>
+
+<main class="page container">
+    <AdminShell Active="settings" Title="Einstellungen" Subtitle="Allgemeine Board-Einstellungen">
+        @if (_s == null) { <div class="card empty">Lade …</div> }
+        else
+        {
+            @if (_msg != null) { <div class="alert alert-ok" role="status">@_msg</div> }
+            @if (_err != null) { <div class="alert alert-err" role="alert">@_err</div> }
+
+            <section class="card card-pad stack">
+                <h2 class="card-title">Allgemein</h2>
+                <div class="form-grid">
+                    <div class="field"><label for="st-name">Forenname</label><input id="st-name" @bind="_s.BoardName" /></div>
+                    <div class="field"><label for="st-url">Basis-URL</label><input id="st-url" @bind="_s.BaseUrl" placeholder="https://forum.example.de" /><span class="hint">Für Links in E-Mails.</span></div>
+                    <div class="field"><label for="st-tz">Zeitzone</label><input id="st-tz" @bind="_s.TimeZone" /><span class="hint">z. B. Europe/Berlin</span></div>
+                </div>
+                <div class="field"><label for="st-desc">Beschreibung / Willkommenstext</label><input id="st-desc" @bind="_s.BoardDescription" /></div>
+
+                <div class="stack" style="gap:8px">
+                    <span class="label" style="font-size:13px;font-weight:600">Logo</span>
+                    <div class="row" style="gap:16px">
+                        @if (!string.IsNullOrEmpty(_s.LogoFile))
+                        {
+                            <img src="/branding/logo?v=@_logoVersion" alt="Aktuelles Logo" style="max-height:48px;border:1px solid var(--border);border-radius:8px;padding:4px;background:var(--card)" />
+                            <button type="button" class="btn btn-ghost" @onclick="RemoveLogo">Logo entfernen</button>
+                        }
+                        else { <span class="muted small">Kein Logo – es wird der Forenname angezeigt.</span> }
+                        <label class="file-drop"><Icon Name="image" />Logo hochladen<InputFile OnChange="UploadLogo" accept="image/png,image/jpeg,image/webp,image/svg+xml" /></label>
+                    </div>
+                    <span class="hint">PNG, JPG, WebP oder SVG. Wird im Kopf mit max. 40 px Höhe angezeigt (ideal: 80 px hoch für scharfe Darstellung).</span>
+                </div>
+
+                <label class="toggle-row" style="border-top:1px solid var(--border-soft)">Forum im Wartungsmodus (nur Admins haben Zugang)<input type="checkbox" @bind="_s.BoardOffline" /></label>
+                @if (_s.BoardOffline)
+                {
+                    <div class="field"><label for="st-off">Wartungstext</label><textarea id="st-off" @bind="_s.OfflineMessage" rows="3"></textarea></div>
+                }
+            </section>
+
+            <section class="card card-pad stack">
+                <h2 class="card-title">Anzeige &amp; Beiträge</h2>
+                <div class="form-grid">
+                    <div class="field"><label for="st-tpp">Themen pro Seite</label><input id="st-tpp" type="number" min="5" max="100" @bind="_s.ThreadsPerPage" /></div>
+                    <div class="field"><label for="st-ppp">Beiträge pro Seite</label><input id="st-ppp" type="number" min="5" max="100" @bind="_s.PostsPerPage" /></div>
+                    <div class="field"><label for="st-ud">„Ungelesen“-Zeitraum (Tage)</label><input id="st-ud" type="number" min="1" max="365" @bind="_s.UnreadDays" /></div>
+                    <div class="field"><label for="st-flood">Mindestabstand zwischen Beiträgen (Sek.)</label><input id="st-flood" type="number" min="0" max="600" @bind="_s.MinSecondsBetweenPosts" /></div>
+                </div>
+                <label class="toggle-row">Externe http-Bilder über den eigenen Server laden (Bild-Proxy, vermeidet „unsicher“-Warnungen)<input type="checkbox" @bind="_s.ImageProxy" /></label>
+            </section>
+
+            <section class="card card-pad stack">
+                <h2 class="card-title">Anhänge &amp; Avatare</h2>
+                <div class="form-grid">
+                    <div class="field"><label for="st-ext">Erlaubte Dateiendungen</label><input id="st-ext" @bind="_s.AttachmentExtensions" /></div>
+                    <div class="field"><label for="st-max">Max. Größe pro Datei (KB)</label><input id="st-max" type="number" min="100" @bind="_s.MaxAttachmentKb" /></div>
+                    <div class="field"><label for="st-maxn">Max. Anhänge pro Beitrag</label><input id="st-maxn" type="number" min="1" max="50" @bind="_s.MaxAttachmentsPerPost" /></div>
+                    <div class="field"><label for="st-thumb">Vorschaubild-Größe (px)</label><input id="st-thumb" type="number" min="100" max="1200" @bind="_s.ThumbnailSize" /></div>
+                </div>
+            </section>
+
+            <section class="card card-pad stack">
+                <h2 class="card-title">Registrierung &amp; Gruppen</h2>
+                <label class="toggle-row">Neue Registrierungen erlauben<input type="checkbox" @bind="_s.AllowRegistration" /></label>
+                <label class="toggle-row">E-Mail-Bestätigung verlangen (nur wenn SMTP eingerichtet ist)<input type="checkbox" @bind="_s.RequireEmailConfirmation" /></label>
+                <label class="toggle-row">Passwörter zusätzlich im vB-Format speichern (altes Board bleibt nutzbar)<input type="checkbox" @bind="_s.SyncLegacyPassword" /></label>
+                <div class="form-grid" style="margin-top:8px">
+                    <GroupSelect Label="Gruppe für neue Mitglieder" @bind-Value="_s.RegisteredGroupId" Groups="_groups" />
+                    <GroupSelect Label="Gruppe „E-Mail unbestätigt“" @bind-Value="_s.AwaitingEmailGroupId" Groups="_groups" />
+                    <GroupSelect Label="Gästegruppe" @bind-Value="_s.GuestGroupId" Groups="_groups" />
+                    <div class="field"><label for="st-ag">Administrator-Gruppen (IDs)</label><input id="st-ag" @bind="_s.AdminGroupIds" /><span class="hint">Kommagetrennt, z. B. 6</span></div>
+                    <div class="field"><label for="st-sm">Super-Moderator-Gruppen</label><input id="st-sm" @bind="_s.SuperModGroupIds" /></div>
+                    <div class="field"><label for="st-bg">Gesperrt-Gruppen</label><input id="st-bg" @bind="_s.BannedGroupIds" /></div>
+                </div>
+            </section>
+
+            <section class="card card-pad stack">
+                <h2 class="card-title">E-Mail-Versand (SMTP)</h2>
+                <div class="form-grid">
+                    <div class="field"><label for="st-host">SMTP-Server</label><input id="st-host" @bind="_s.SmtpHost" /></div>
+                    <div class="field"><label for="st-port">Port</label><input id="st-port" type="number" @bind="_s.SmtpPort" /></div>
+                    <div class="field"><label for="st-su">Benutzer</label><input id="st-su" @bind="_s.SmtpUser" autocomplete="off" /></div>
+                    <div class="field"><label for="st-sp">Passwort</label><input id="st-sp" type="password" @bind="_s.SmtpPassword" autocomplete="new-password" /></div>
+                    <div class="field"><label for="st-from">Absenderadresse</label><input id="st-from" type="email" @bind="_s.MailFrom" /></div>
+                </div>
+                <label class="toggle-row">TLS/SSL verwenden<input type="checkbox" @bind="_s.SmtpSsl" /></label>
+                <div class="row">
+                    <input class="input" style="flex:1 1 240px" type="email" placeholder="Test-Empfänger" @bind="_testTo" aria-label="Test-Empfänger" />
+                    <button type="button" class="btn" @onclick="TestMail" disabled="@_busy">Testmail senden</button>
+                </div>
+                <span class="hint">Vor dem Test bitte speichern.</span>
+            </section>
+
+            <div class="form-actions" style="position:sticky;bottom:12px">
+                <button type="button" class="btn" @onclick="Reload">Verwerfen</button>
+                <button type="button" class="btn btn-primary" @onclick="Save" disabled="@_busy">Einstellungen speichern</button>
+            </div>
+        }
+    </AdminShell>
+</main>
+
+@code {
+    private BoardSettings? _s;
+    private List<UserGroup> _groups = new();
+    private string? _msg, _err, _testTo;
+    private bool _busy;
+    private string _logoVersion = "";
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    private async Task Reload()
+    {
+        var snap = await Cache.GetAsync();
+        _s = snap.Settings.Clone();
+        _groups = snap.Groups.Values.OrderBy(g => g.UserGroupId).ToList();
+        _logoVersion = _s.LogoFile;
+        _msg = _err = null;
+    }
+
+    private async Task Save()
+    {
+        _busy = true; _msg = _err = null;
+        try
+        {
+            _s!.ThreadsPerPage = Math.Clamp(_s.ThreadsPerPage, 5, 100);
+            _s.PostsPerPage = Math.Clamp(_s.PostsPerPage, 5, 100);
+            try { TimeZoneInfo.FindSystemTimeZoneById(_s.TimeZone); } catch { _err = $"Unbekannte Zeitzone „{_s.TimeZone}“."; return; }
+            await Cache.SaveSettingsAsync(_s);
+            await Audit.LogAsync(await Current.GetAsync(), "settings.save", "", "");
+            _msg = "Einstellungen gespeichert.";
+        }
+        catch (Exception ex) { _err = "Speichern fehlgeschlagen: " + ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task UploadLogo(InputFileChangeEventArgs e)
+    {
+        _msg = _err = null;
+        var f = e.File;
+        if (f.Size > 2 * 1024 * 1024) { _err = "Das Logo darf höchstens 2 MB groß sein."; return; }
+        using var ms = new MemoryStream();
+        await f.OpenReadStream(2 * 1024 * 1024).CopyToAsync(ms);
+        var data = ms.ToArray();
+        string ext;
+        if (f.Name.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
+        {
+            var text = System.Text.Encoding.UTF8.GetString(data);
+            if (!text.Contains("<svg") || text.Contains("<script", StringComparison.OrdinalIgnoreCase) || text.Contains("on", StringComparison.Ordinal) && System.Text.RegularExpressions.Regex.IsMatch(text, @"\son\w+\s*=", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            { _err = "Die SVG-Datei enthält Skripte und wird aus Sicherheitsgründen nicht akzeptiert."; return; }
+            ext = "svg";
+        }
+        else
+        {
+            var info = ImageService.Inspect(data);
+            if (info == null) { _err = "Die Datei ist kein unterstütztes Bild."; return; }
+            ext = info.Extension;
+        }
+        Directory.CreateDirectory(Paths.Branding);
+        foreach (var old in Directory.GetFiles(Paths.Branding, "logo-*")) try { File.Delete(old); } catch { }
+        var name = $"logo-{DateTime.UtcNow.Ticks}.{ext}";
+        await File.WriteAllBytesAsync(Path.Combine(Paths.Branding, name), data);
+        _s!.LogoFile = name;
+        var current = (await Cache.GetAsync()).Settings.Clone();
+        current.LogoFile = name;
+        await Cache.SaveSettingsAsync(current);
+        _logoVersion = name;
+        _msg = "Logo gespeichert.";
+    }
+
+    private async Task RemoveLogo()
+    {
+        var current = (await Cache.GetAsync()).Settings.Clone();
+        current.LogoFile = "";
+        await Cache.SaveSettingsAsync(current);
+        _s!.LogoFile = "";
+        _msg = "Logo entfernt.";
+    }
+
+    private async Task TestMail()
+    {
+        _busy = true; _msg = _err = null;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_testTo)) { _err = "Bitte einen Empfänger angeben."; return; }
+            var ok = await Mail.SendAsync(_testTo, "Testmail", "Wenn du diese Nachricht liest, funktioniert der E-Mail-Versand des Forums.");
+            if (ok) _msg = "Testmail wurde verschickt."; else _err = "Versand fehlgeschlagen. Details stehen im Log der Anwendung.";
+        }
+        finally { _busy = false; }
+    }
+}

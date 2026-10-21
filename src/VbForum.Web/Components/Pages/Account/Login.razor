@@ -1,0 +1,98 @@
+@page "/login"
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@inject AuthService Auth
+@inject BoardCache Cache
+@inject LoginThrottle Throttle
+@inject TokenRepository Audit
+@inject NavigationManager Nav
+
+<PageTitle>Anmelden</PageTitle>
+
+<main class="page container" style="align-items:center">
+    <div class="stack" style="width:min(420px,100%);gap:24px">
+        <div class="stack" style="align-items:center;gap:10px;text-align:center">
+            <span class="brand-mark" style="width:56px;height:56px;font-size:24px;border-radius:14px" aria-hidden="true">@(_boardName.Length > 0 ? _boardName[..1].ToUpperInvariant() : "F")</span>
+            <h1 style="font-size:24px">Willkommen zurück</h1>
+            <p class="muted" style="margin:0">Melde dich bei @_boardName an.</p>
+        </div>
+
+        <EditForm Model="Input" FormName="login" OnSubmit="SubmitAsync" class="card card-pad stack" Enhance>
+            @if (_error != null) { <div class="alert alert-err" role="alert">@_error</div> }
+            @if (Msg == "reset") { <div class="alert alert-ok">Dein Passwort wurde geändert. Du kannst dich jetzt anmelden.</div> }
+            @if (Msg == "confirmed") { <div class="alert alert-ok">Deine E-Mail-Adresse ist bestätigt. Viel Spaß!</div> }
+            <div class="field">
+                <label for="l-user">Benutzername oder E-Mail</label>
+                <InputText id="l-user" @bind-Value="Input.Username" autocomplete="username" style="min-height:48px;font-size:16px" />
+            </div>
+            <div class="field">
+                <div class="row" style="justify-content:space-between">
+                    <label for="l-pw" style="font-size:13px;font-weight:600">Passwort</label>
+                    <a href="/account/forgot" class="small" style="text-decoration:none;font-weight:500">Vergessen?</a>
+                </div>
+                <InputText id="l-pw" type="password" @bind-Value="Input.Password" autocomplete="current-password" style="min-height:48px;font-size:16px" />
+            </div>
+            <label class="check" style="font-size:15px;min-height:44px"><InputCheckbox @bind-Value="Input.Remember" style="width:20px;height:20px" />Angemeldet bleiben</label>
+            <input type="hidden" name="Input.ReturnUrl" value="@(Input.ReturnUrl ?? ReturnUrl)" />
+            <button type="submit" class="btn btn-primary" style="min-height:50px;font-size:16px">Anmelden</button>
+        </EditForm>
+
+        @if (_allowReg)
+        {
+            <p class="muted" style="text-align:center;margin:0">Noch kein Konto? <a href="/register" style="font-weight:600;text-decoration:none">Registrieren</a></p>
+        }
+        <p class="small muted" style="text-align:center;margin:0">Bestehende Zugangsdaten aus dem alten Forum funktionieren weiter.</p>
+    </div>
+</main>
+
+@code {
+    public sealed class LoginInput
+    {
+        public string Username { get; set; } = "";
+        public string Password { get; set; } = "";
+        public bool Remember { get; set; } = true;
+        public string? ReturnUrl { get; set; }
+    }
+
+    [CascadingParameter] public HttpContext HttpContext { get; set; } = default!;
+    [SupplyParameterFromForm] public LoginInput Input { get; set; } = new();
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+    [SupplyParameterFromQuery] public string? Msg { get; set; }
+
+    private string? _error;
+    private string _boardName = "Forum";
+    private bool _allowReg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var s = (await Cache.GetAsync()).Settings;
+        _boardName = s.BoardName;
+        _allowReg = s.AllowRegistration;
+    }
+
+    private static string SafeReturn(string? url) =>
+        !string.IsNullOrEmpty(url) && url.StartsWith('/') && !url.StartsWith("//") && !url.StartsWith("/\\") && !url.StartsWith("/login") ? url : "/";
+
+    private async Task SubmitAsync()
+    {
+        var ip = HttpContext.ClientIp();
+        if (Throttle.IsBlocked(ip, Input.Username))
+        {
+            _error = "Zu viele Fehlversuche. Bitte warte 15 Minuten oder setze dein Passwort zurück.";
+            return;
+        }
+        var r = await Auth.ValidateAsync(Input.Username, Input.Password);
+        if (r.User == null)
+        {
+            Throttle.Fail(ip, Input.Username);
+            _error = r.Error;
+            Input.Password = "";
+            return;
+        }
+        Throttle.Success(ip, Input.Username);
+        var principal = AuthSetup.CreatePrincipal(r.User.UserId, r.User.DisplayName, AuthService.Stamp(r.User));
+        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal,
+            new AuthenticationProperties { IsPersistent = Input.Remember, AllowRefresh = true });
+        Nav.NavigateTo(SafeReturn(Input.ReturnUrl ?? ReturnUrl), forceLoad: true);
+    }
+}

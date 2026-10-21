@@ -1,0 +1,49 @@
+@{ var f = Summary.Forum; }
+<div class="forum-row">
+    <div class="forum-main">
+        <span class="forum-icon @(Summary.Unread ? "unread" : "")" title="@(Summary.Unread ? "Neue Beiträge" : "Keine neuen Beiträge")">
+            <Icon Name="@(f.IsCategory ? "folder" : !string.IsNullOrEmpty(f.Link) ? "link" : "chat")" Size="20" />
+        </span>
+        <div class="stack" style="gap:4px;min-width:0">
+            <a href="@Summary.Url" class="forum-title">@f.DisplayTitle</a>
+            @if (!string.IsNullOrWhiteSpace(f.DisplayDescription))
+            {
+                <span class="forum-desc">@f.DisplayDescription</span>
+            }
+            @if (Summary.VisibleChildren.Count > 0)
+            {
+                <div class="chips">
+                    @foreach (var c in Summary.VisibleChildren)
+                    {
+                        <a href="@Links.Forum(c)" class="chip">@c.DisplayTitle</a>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+    @if (string.IsNullOrEmpty(f.Link))
+    {
+        <div class="forum-stats">
+            <div><strong>@ForumTime.Number(Summary.Threads)</strong>Themen</div>
+            <div><strong>@ForumTime.Number(Summary.Posts)</strong>Beiträge</div>
+        </div>
+        <div class="forum-last">
+            @if (Summary.LastThreadId > 0)
+            {
+                <Avatar UserId="Summary.LastPosterId" Name="@Summary.LastPoster" Size="32" />
+                <div class="info">
+                    <a href="/thread/@Summary.LastThreadId/unread" class="ellipsis">@Summary.LastThread</a>
+                    <span class="muted">@Summary.LastPoster · @ForumTime.Relative(Summary.LastPost)</span>
+                </div>
+            }
+            else
+            {
+                <span class="muted">Noch keine Beiträge</span>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ForumSummary Summary { get; set; } = default!;
+}

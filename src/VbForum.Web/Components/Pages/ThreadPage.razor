@@ -1,0 +1,331 @@
+@page "/thread/{Id:long}"
+@page "/thread/{Id:long}/{Slug}"
+@inject BoardCache Cache
+@inject CurrentUser Current
+@inject ThreadRepository Threads
+@inject PostRepository Posts
+@inject AttachmentRepository Attachments
+@inject SubscriptionRepository Subs
+@inject PostRenderer Renderer
+@inject ViewCounter Views
+@inject NavigationManager Nav
+
+<PageTitle>@(_thread?.DisplayTitle ?? "Thema") – @_snap?.Settings.BoardName</PageTitle>
+
+@if (!_loaded) { return; }
+<main class="page container" style="gap:16px">
+    @if (_thread == null || _forum == null)
+    {
+        <div class="card card-pad">
+            <h1 class="card-title">Thema nicht gefunden</h1>
+            <p class="muted">Das Thema existiert nicht (mehr) oder du hast keine Berechtigung, es zu lesen.</p>
+            @if (_user?.IsGuest == true) { <p><a class="btn btn-primary" href="/login?returnUrl=@Uri.EscapeDataString("/" + Nav.ToBaseRelativePath(Nav.Uri))">Anmelden</a></p> }
+        </div>
+    }
+    else
+    {
+        <nav aria-label="Brotkrumen" class="breadcrumb">
+            <a href="/">Foren</a>
+            @foreach (var b in _snap!.Breadcrumb(_forum))
+            {
+                <span aria-hidden="true">›</span><a href="@Links.Forum(b)">@b.DisplayTitle</a>
+            }
+        </nav>
+
+        <div class="page-head">
+            <div style="min-width:0">
+                <h1>@_thread.DisplayTitle</h1>
+                <p>
+                    Gestartet von @HtmlUtil.CleanTitle(_thread.PostUsername) · @ForumTime.Relative(_thread.Dateline) ·
+                    @ForumTime.Number(_thread.ReplyCount + 1) Beiträge · @ForumTime.Number(_thread.Views) Aufrufe
+                    @if (!_thread.IsOpen) { <span class="pill" style="margin-left:6px">Geschlossen</span> }
+                    @if (_thread.IsSticky) { <span class="pill pill-warn" style="margin-left:6px">Angepinnt</span> }
+                    @if (_thread.IsModerated) { <span class="pill pill-accent" style="margin-left:6px">Wartet auf Freigabe</span> }
+                    @if (_thread.IsDeleted) { <span class="pill pill-danger" style="margin-left:6px">Gelöscht</span> }
+                </p>
+            </div>
+            <div class="row">
+                @if (!_user!.IsGuest)
+                {
+                    <form method="post" action="/thread/@_thread.ThreadId/subscribe" class="inline">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="mode" value="@(_subscribed ? "off" : "email")" />
+                        <input type="hidden" name="returnUrl" value="@CurrentUrl" />
+                        <button type="submit" class="btn"><Icon Name="bell" />@(_subscribed ? "Abo beenden" : "Abonnieren")</button>
+                    </form>
+                }
+                @if (_canReply)
+                {
+                    <a href="#antworten" class="btn btn-primary"><Icon Name="reply" />Antworten</a>
+                }
+            </div>
+        </div>
+
+        @if (_isMod)
+        {
+            <div class="mod-bar" role="region" aria-label="Moderation">
+                <strong>Moderation:</strong>
+                <ModButton ThreadId="_thread.ThreadId" Action="@(_thread.IsOpen ? "close" : "open")" Label="@(_thread.IsOpen ? "Schließen" : "Öffnen")" Return="@CurrentUrl" />
+                <ModButton ThreadId="_thread.ThreadId" Action="@(_thread.IsSticky ? "unstick" : "stick")" Label="@(_thread.IsSticky ? "Lösen" : "Anpinnen")" Return="@CurrentUrl" />
+                @if (_thread.IsModerated) { <ModButton ThreadId="_thread.ThreadId" Action="approve" Label="Freischalten" Return="@CurrentUrl" /> }
+                <details class="menu">
+                    <summary class="btn btn-sm">Verschieben</summary>
+                    <form method="post" action="/mod/thread/@_thread.ThreadId" class="menu-pop">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="action" value="move" />
+                        <input type="hidden" name="returnUrl" value="@CurrentUrl" />
+                        <label class="small" for="mvTarget">Zielforum</label>
+                        <select id="mvTarget" name="target">
+                            @foreach (var f in _snap.Flatten().Where(x => !x.IsCategory))
+                            {
+                                <option value="@f.ForumId" selected="@(f.ForumId == _forum.ForumId)">@(new string(' ', f.Depth * 3))@f.DisplayTitle</option>
+                            }
+                        </select>
+                        <button type="submit" class="btn btn-sm btn-primary">Verschieben</button>
+                    </form>
+                </details>
+                <details class="menu">
+                    <summary class="btn btn-sm">Umbenennen</summary>
+                    <form method="post" action="/mod/thread/@_thread.ThreadId" class="menu-pop">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="action" value="rename" />
+                        <input type="hidden" name="returnUrl" value="@CurrentUrl" />
+                        <label class="small" for="rnTitle">Neuer Titel</label>
+                        <input id="rnTitle" class="input" name="title" value="@_thread.DisplayTitle" maxlength="85" />
+                        <button type="submit" class="btn btn-sm btn-primary">Speichern</button>
+                    </form>
+                </details>
+                @if (_thread.IsDeleted)
+                {
+                    <ModButton ThreadId="_thread.ThreadId" Action="restore" Label="Wiederherstellen" Return="@CurrentUrl" />
+                }
+                else
+                {
+                    <ModButton ThreadId="_thread.ThreadId" Action="delete" Label="Löschen" Danger="true" Confirm="Thema löschen? Es kann später wiederhergestellt werden." Return="@CurrentUrl" />
+                }
+                @if (_user.IsAdmin || _user.IsSuperMod)
+                {
+                    <ModButton ThreadId="_thread.ThreadId" Action="harddelete" Label="Endgültig löschen" Danger="true" Confirm="Thema mit allen Beiträgen und Anhängen ENDGÜLTIG löschen? Das kann nicht rückgängig gemacht werden." Return="@CurrentUrl" />
+                }
+            </div>
+        }
+
+        <form method="get" action="@Links.Thread(_thread)" class="card toolbar" style="border-radius:12px;border:1px solid var(--border)">
+            <div class="row">
+                <span class="small" style="font-weight:500;color:var(--muted-2)">Beiträge</span>
+                <div class="seg" role="group" aria-label="Reihenfolge der Beiträge">
+                    <a href="@Url(1, false, Q)" class="@(!NewestFirst ? "on" : "")">Älteste zuerst</a>
+                    <a href="@Url(1, true, Q)" class="@(NewestFirst ? "on" : "")">Neueste zuerst</a>
+                </div>
+                <div class="search-box" style="flex:0 1 240px;min-height:40px;background:var(--card)">
+                    <Icon Name="search" Size="16" />
+                    <label for="tq" class="sr-only">In diesem Thema suchen</label>
+                    <input id="tq" name="q" type="search" value="@Q" placeholder="In diesem Thema suchen" />
+                    @if (NewestFirst) { <input type="hidden" name="order" value="desc" /> }
+                </div>
+                @if (!string.IsNullOrEmpty(Q)) { <a href="@Url(1, NewestFirst, null)" class="small">Suche aufheben</a> }
+            </div>
+            <Pager Page="_page" PageCount="_posts!.PageCount" Href="p => Url(p, NewestFirst, Q)" />
+        </form>
+
+        @if (_posts.Items.Count == 0)
+        {
+            <div class="card empty">@(string.IsNullOrEmpty(Q) ? "Keine Beiträge sichtbar." : $"Keine Beiträge mit „{Q}“ in diesem Thema.")</div>
+        }
+
+        @foreach (var p in _posts.Items)
+        {
+            var a = _authors.GetValueOrDefault(p.UserId);
+            var own = !_user.IsGuest && p.UserId == _user.UserId;
+            var ctx = _contexts[p.PostId];
+            var html = Renderer.Render(p.PageText, ctx);
+            var atts = _attachments.GetValueOrDefault(p.PostId, new()).Where(x => !ctx.InlinedAttachments.Contains(x.AttachmentId)).ToList();
+            <article id="post@(p.PostId)" class="post @(own ? "own" : "") @(p.Visible == 0 ? "moderated" : "") @(p.Visible == 2 ? "deleted" : "")">
+                <aside class="post-aside">
+                    <Avatar UserId="p.UserId" Name="@(a?.DisplayName ?? HtmlUtil.CleanTitle(p.Username))" HasAvatar="@(a?.HasCustomAvatar > 0)" Revision="@(a?.AvatarRevision ?? 0)" Size="48" />
+                    <div class="post-author">
+                        @if (a != null)
+                        {
+                            <a class="name" href="@Links.User(a.UserId, a.DisplayName)">@a.DisplayName</a>
+                            <span class="rank">@Rank(a)</span>
+                            <span>Dabei seit @ForumTime.Local(a.JoinDate).Year</span>
+                            <span>@ForumTime.Number(a.Posts) Beiträge</span>
+                        }
+                        else
+                        {
+                            <span class="name">@HtmlUtil.CleanTitle(p.Username)</span>
+                            <span class="rank">Gast</span>
+                        }
+                    </div>
+                </aside>
+                <div class="post-main">
+                    <div class="post-meta">
+                        <span>@ForumTime.Full(p.Dateline)@(own ? " · dein Beitrag" : "")</span>
+                        <a href="/post/@p.PostId" title="Link zu diesem Beitrag">#@p.Position</a>
+                    </div>
+                    @if (p.Visible == 0) { <div class="post-notice">Dieser Beitrag wartet auf Freigabe durch das Moderationsteam.</div> }
+                    @if (p.Visible == 2) { <div class="post-notice">Gelöscht@(string.IsNullOrEmpty(p.DeletedBy) ? "" : $" von {HtmlUtil.CleanTitle(p.DeletedBy)}")@(string.IsNullOrEmpty(p.DeleteReason) ? "" : $": {HtmlUtil.CleanTitle(p.DeleteReason)}")</div> }
+                    <div class="post-body">@html</div>
+                    @if (atts.Count > 0)
+                    {
+                        <div class="attachments" aria-label="Anhänge">
+                            @foreach (var att in atts)
+                            {
+                                @if (att.IsImage)
+                                {
+                                    <a class="att-thumb" href="/attachment/@att.AttachmentId" data-lightbox title="@att.DisplayName (@HtmlUtil.FormatBytes(att.FileSize))">
+                                        <img src="@($"/attachment/{att.AttachmentId}{(att.HasThumbnail ? "/thumb" : "")}")" alt="@att.DisplayName" loading="lazy" />
+                                    </a>
+                                }
+                                else
+                                {
+                                    <a class="att-file" href="/attachment/@att.AttachmentId"><Icon Name="paperclip" Size="16" />@att.DisplayName · @HtmlUtil.FormatBytes(att.FileSize)</a>
+                                }
+                            }
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(p.EditUsername))
+                    {
+                        <div class="post-edited">Zuletzt bearbeitet von @HtmlUtil.CleanTitle(p.EditUsername) am @ForumTime.Full(p.EditDateline)@(string.IsNullOrWhiteSpace(p.EditReason) ? "" : $" – Grund: {HtmlUtil.CleanTitle(p.EditReason)}")</div>
+                    }
+                    @if (p.ShowSignature == 1 && _signatures.TryGetValue(p.UserId, out var sig) && !string.IsNullOrEmpty(sig.Value))
+                    {
+                        <div class="signature">@sig</div>
+                    }
+                    <div class="post-actions">
+                        @if (_canDelete.Contains(p.PostId) && p.Visible != 2)
+                        {
+                            <form method="post" action="/mod/post/@p.PostId" class="inline">
+                                <AntiforgeryToken />
+                                <input type="hidden" name="action" value="delete" />
+                                <input type="hidden" name="returnUrl" value="@CurrentUrl" />
+                                <button type="submit" class="btn btn-ghost btn-sm" data-confirm="@(p.PostId == _thread.FirstPostId ? "Damit wird das ganze Thema gelöscht. Fortfahren?" : "Beitrag löschen?")">Löschen</button>
+                            </form>
+                        }
+                        @if (_isMod && p.Visible == 0) { <PostModButton PostId="p.PostId" Action="approve" Label="Freischalten" Return="@CurrentUrl" /> }
+                        @if (_isMod && p.Visible == 2) { <PostModButton PostId="p.PostId" Action="restore" Label="Wiederherstellen" Return="@CurrentUrl" /> }
+                        @if ((_user.IsAdmin || _user.IsSuperMod) && p.Visible == 2) { <PostModButton PostId="p.PostId" Action="harddelete" Label="Endgültig löschen" Danger="true" Confirm="Beitrag endgültig löschen?" Return="@CurrentUrl" /> }
+                        @if (_canEdit.Contains(p.PostId))
+                        {
+                            <a href="/post/@p.PostId/edit" class="btn btn-sm">Bearbeiten</a>
+                        }
+                        @if (_canReply && p.Visible == 1)
+                        {
+                            <a href="/thread/@_thread.ThreadId/reply?quote=@p.PostId" class="btn btn-sm">Zitieren</a>
+                        }
+                    </div>
+                </div>
+            </article>
+        }
+
+        <div class="row" style="justify-content:flex-end">
+            <Pager Page="_page" PageCount="_posts.PageCount" Href="p => Url(p, NewestFirst, Q)" />
+        </div>
+
+        @if (_canReply)
+        {
+            <section id="antworten" aria-labelledby="antw-h" class="card card-pad stack">
+                <h2 id="antw-h" style="font-size:17px">Antworten</h2>
+                <PostEditor @rendermode="InteractiveServer" ThreadId="_thread.ThreadId" Compact="true" Ip="@(HttpContext?.ClientIp() ?? "")" />
+            </section>
+        }
+        else if (_user.IsGuest)
+        {
+            <div class="card card-pad row" style="justify-content:space-between">
+                <span>Du möchtest mitdiskutieren?</span>
+                <span class="row">
+                    <a class="btn btn-primary" href="/login?returnUrl=@Uri.EscapeDataString(CurrentUrl)">Anmelden</a>
+                    @if (_snap.Settings.AllowRegistration) { <a class="btn" href="/register">Registrieren</a> }
+                </span>
+            </div>
+        }
+        else if (!_thread.IsOpen)
+        {
+            <div class="alert alert-info">Dieses Thema ist geschlossen. Neue Antworten sind nicht möglich.</div>
+        }
+    }
+</main>
+
+@code {
+    [CascadingParameter] public HttpContext? HttpContext { get; set; }
+    [Parameter] public long Id { get; set; }
+    [Parameter] public string? Slug { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageQ { get; set; }
+    [SupplyParameterFromQuery(Name = "order")] public string? OrderQ { get; set; }
+    [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
+
+    private BoardSnapshot? _snap;
+    private ForumUser? _user;
+    private ForumThread? _thread;
+    private Forum? _forum;
+    private PagedResult<Post>? _posts;
+    private Dictionary<long, PostAuthor> _authors = new();
+    private Dictionary<long, List<Attachment>> _attachments = new();
+    private Dictionary<long, MarkupString> _signatures = new();
+    private Dictionary<long, VbForum.Core.BbCode.BbCodeContext> _contexts = new();
+    private HashSet<long> _canEdit = new(), _canDelete = new();
+    private bool _isMod, _canReply, _subscribed;
+    private int _page = 1;
+
+    private bool NewestFirst => OrderQ == "desc";
+    private string CurrentUrl => "/" + Nav.ToBaseRelativePath(Nav.Uri);
+
+    private string Url(int page, bool desc, string? q) => Links.WithQuery(Links.Thread(_thread!), new Dictionary<string, object?>
+    {
+        ["order"] = desc ? "desc" : null, ["q"] = q, ["page"] = page > 1 ? page : null
+    });
+
+    private string Rank(PostAuthor a)
+    {
+        if (!string.IsNullOrWhiteSpace(a.UserTitle)) return HtmlUtil.CleanTitle(System.Text.RegularExpressions.Regex.Replace(a.UserTitle, "<[^>]+>", ""));
+        return _snap!.Groups.TryGetValue(a.UserGroupId, out var g) && !string.IsNullOrWhiteSpace(g.UserTitle) ? HtmlUtil.CleanTitle(g.UserTitle) : "Mitglied";
+    }
+
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { await LoadAsync(); } finally { _loaded = true; }
+    }
+
+    private async Task LoadAsync()
+    {
+        _snap = await Cache.GetAsync();
+        _user = await Current.GetAsync();
+        var t = await Threads.GetAsync(Id);
+        if (t == null) return;
+        if (t.IsRedirect) { Nav.NavigateTo($"/thread/{t.PollId}"); return; }
+        var f = _snap.Forum(t.ForumId);
+        var perms = new Permissions(_snap);
+        if (f == null || !perms.CanReadThread(_user, f, t)) return;
+        _thread = t; _forum = f;
+        _isMod = perms.IsModerator(_user, f);
+        _canReply = perms.CanReply(_user, f, t);
+
+        _page = Math.Max(1, PageQ ?? 1);
+        _posts = await Posts.ListByThreadAsync(t.ThreadId, _page, _snap.Settings.PostsPerPage, NewestFirst, _isMod, _isMod, _user.UserId, Q);
+        if (_page > _posts.PageCount && _posts.Total > 0)
+        {
+            _page = _posts.PageCount;
+            _posts = await Posts.ListByThreadAsync(t.ThreadId, _page, _snap.Settings.PostsPerPage, NewestFirst, _isMod, _isMod, _user.UserId, Q);
+        }
+        var ids = _posts.Items.Select(p => p.PostId).ToList();
+        _authors = await Posts.AuthorsAsync(_posts.Items.Select(p => p.UserId));
+        _attachments = await Attachments.ByPostsAsync(ids);
+        var canAtt = perms.CanGetAttachment(_user, f);
+        foreach (var p in _posts.Items)
+        {
+            _contexts[p.PostId] = await Renderer.ContextAsync(f, _attachments.GetValueOrDefault(p.PostId), canAtt);
+            if (perms.CanEditPost(_user, f, t, p)) _canEdit.Add(p.PostId);
+            if (perms.CanDeletePost(_user, f, t, p)) _canDelete.Add(p.PostId);
+        }
+        if (!canAtt) _attachments.Clear();
+        foreach (var a in _authors.Values)
+            _signatures[a.UserId] = await Renderer.RenderSignatureAsync(a.Signature);
+
+        _subscribed = await Subs.IsSubscribedAsync(_user.UserId, t.ThreadId);
+        Views.Add(t.ThreadId);
+        if (!_user.IsGuest && _posts.Items.Count > 0)
+            await Threads.MarkThreadReadAsync(_user.UserId, t.ThreadId, _posts.Items.Max(p => p.Dateline));
+    }
+}

@@ -1,0 +1,106 @@
+@page "/"
+@inject BoardCache Cache
+@inject CurrentUser Current
+@inject ThreadRepository Threads
+@inject UserRepository Users
+
+<PageTitle>@_snap?.Settings.BoardName</PageTitle>
+
+@if (!_loaded) { return; }
+<main class="page container">
+    @if (_snap != null && _user != null)
+    {
+        <div class="page-head">
+            <div>
+                <h1>Foren</h1>
+                @if (_user.IsGuest)
+                {
+                    <p>Willkommen bei @_snap.Settings.BoardName. @(!string.IsNullOrEmpty(_snap.Settings.BoardDescription) ? _snap.Settings.BoardDescription : "")</p>
+                }
+                else
+                {
+                    <p>Willkommen zurück, @_user.Username.</p>
+                }
+            </div>
+            @if (!_user.IsGuest)
+            {
+                <div class="row">
+                    <a href="/new" class="btn">Neue Beiträge anzeigen</a>
+                    <form method="post" action="/markread" class="inline">
+                        <AntiforgeryToken />
+                        <button type="submit" class="btn">Alle als gelesen markieren</button>
+                    </form>
+                </div>
+            }
+        </div>
+
+        @foreach (var section in _sections)
+        {
+            <section class="card" aria-labelledby="cat-@section.Id">
+                <div class="card-head">
+                    <h2 id="cat-@section.Id">@section.Title</h2>
+                    <span class="small muted">@section.Forums.Count @(section.Forums.Count == 1 ? "Forum" : "Foren")</span>
+                </div>
+                @foreach (var s in section.Forums)
+                {
+                    <ForumRow Summary="s" />
+                }
+            </section>
+        }
+
+        @if (_sections.Count == 0)
+        {
+            <div class="card empty">Hier gibt es (noch) keine Foren, die du sehen darfst.</div>
+        }
+
+        <section aria-label="Statistik" class="stats-grid">
+            <div class="stat"><div class="label">Themen</div><div class="value">@ForumTime.Compact(_snap.TotalThreads)</div></div>
+            <div class="stat"><div class="label">Beiträge</div><div class="value">@ForumTime.Compact(_snap.TotalPosts)</div></div>
+            <div class="stat"><div class="label">Mitglieder</div><div class="value">@ForumTime.Compact(_snap.TotalMembers)</div></div>
+            <div class="stat"><div class="label">Gerade online</div><div class="value">@_online</div></div>
+        </section>
+        @if (_snap.NewestUserId > 0)
+        {
+            <p class="small muted">Neuestes Mitglied: <a href="@Links.User(_snap.NewestUserId, _snap.NewestUsername)">@_snap.NewestUsername</a></p>
+        }
+    }
+</main>
+
+@code {
+    private sealed record Section(int Id, string Title, List<ForumSummary> Forums);
+
+    private BoardSnapshot? _snap;
+    private ForumUser? _user;
+    private List<Section> _sections = new();
+    private long _online;
+
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { await LoadAsync(); } finally { _loaded = true; }
+    }
+
+    private async Task LoadAsync()
+    {
+        _snap = await Cache.GetAsync();
+        _user = await Current.GetAsync();
+        var perms = new Permissions(_snap);
+        var reads = await Threads.ForumReadTimesAsync(_user.UserId);
+        var cutoff = Math.Max(Links.UnreadCutoff(_snap.Settings), _user.IsGuest ? 0 : 0);
+
+        var loose = new List<ForumSummary>();
+        foreach (var root in _snap.RootForums.Where(f => perms.CanSeeForum(_user, f)))
+        {
+            if (root.IsCategory)
+            {
+                var rows = root.Children.Where(c => perms.CanSeeForum(_user, c))
+                    .Select(c => ForumSummary.Build(c, perms, _user, reads, cutoff)).ToList();
+                if (rows.Count > 0) _sections.Add(new Section(root.ForumId, root.DisplayTitle, rows));
+            }
+            else loose.Add(ForumSummary.Build(root, perms, _user, reads, cutoff));
+        }
+        if (loose.Count > 0) _sections.Insert(0, new Section(0, "Foren", loose));
+        _online = await Users.OnlineCountAsync();
+    }
+}

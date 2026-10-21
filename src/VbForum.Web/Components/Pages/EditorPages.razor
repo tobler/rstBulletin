@@ -1,0 +1,108 @@
+@page "/forum/{ForumId:int}/new"
+@page "/thread/{ThreadId:long}/reply"
+@page "/post/{PostId:long}/edit"
+@attribute [Authorize]
+@inject BoardCache Cache
+@inject CurrentUser Current
+@inject ThreadRepository Threads
+@inject PostRepository Posts
+
+<PageTitle>@_title – @_snap?.Settings.BoardName</PageTitle>
+
+@if (!_loaded) { return; }
+<main class="page container">
+    @if (_error != null)
+    {
+        <div class="card card-pad">
+            <h1 class="card-title">Nicht möglich</h1>
+            <p class="muted">@_error</p>
+            <p><a class="btn" href="@(_back ?? "/")">Zurück</a></p>
+        </div>
+    }
+    else if (_snap != null)
+    {
+        <nav aria-label="Brotkrumen" class="breadcrumb">
+            <a href="/">Foren</a>
+            @if (_forum != null)
+            {
+                @foreach (var b in _snap.Breadcrumb(_forum))
+                {
+                    <span aria-hidden="true">›</span><a href="@Links.Forum(b)">@b.DisplayTitle</a>
+                }
+            }
+            @if (_thread != null)
+            {
+                <span aria-hidden="true">›</span><a href="@Links.Thread(_thread)">@_thread.DisplayTitle</a>
+            }
+        </nav>
+        <div class="page-head"><h1>@_title</h1></div>
+        <section class="card card-pad">
+            <PostEditor @rendermode="InteractiveServer" ForumId="ForumId" ThreadId="ThreadId" EditPostId="PostId"
+                        QuotePostId="Quote ?? 0" CancelUrl="@_back" Ip="@(HttpContext?.ClientIp() ?? "")" />
+        </section>
+        @if (ForumId > 0)
+        {
+            <details class="card card-pad small">
+                <summary style="cursor:pointer;font-weight:600">BBCode-Hilfe</summary>
+                <p class="muted">[b]fett[/b] · [i]kursiv[/i] · [u]unterstrichen[/u] · [url=https://…]Text[/url] · [img]https://…/bild.jpg[/img] ·
+                    [quote]Zitat[/quote] · [code]Code[/code] · [list][*]Punkt[/list] · [color=red]Farbe[/color] · [size=4]Größe[/size]</p>
+            </details>
+        }
+    }
+</main>
+
+@code {
+    [CascadingParameter] public HttpContext? HttpContext { get; set; }
+    [Parameter] public int ForumId { get; set; }
+    [Parameter] public long ThreadId { get; set; }
+    [Parameter] public long PostId { get; set; }
+    [SupplyParameterFromQuery(Name = "quote")] public long? Quote { get; set; }
+
+    private BoardSnapshot? _snap;
+    private Forum? _forum;
+    private ForumThread? _thread;
+    private string _title = "";
+    private string? _error, _back;
+
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { await LoadAsync(); } finally { _loaded = true; }
+    }
+
+    private async Task LoadAsync()
+    {
+        _snap = await Cache.GetAsync();
+        var u = await Current.GetAsync();
+        var perms = new Permissions(_snap);
+        if (ForumId > 0)
+        {
+            _forum = _snap.Forum(ForumId);
+            _title = "Neues Thema";
+            _back = _forum == null ? "/" : Links.Forum(_forum);
+            if (_forum == null || !perms.CanPostThread(u, _forum)) _error = "Du darfst in diesem Forum keine Themen erstellen.";
+            else _title = $"Neues Thema in „{_forum.DisplayTitle}“";
+        }
+        else if (ThreadId > 0)
+        {
+            _thread = await Threads.GetAsync(ThreadId);
+            _forum = _thread == null ? null : _snap.Forum(_thread.ForumId);
+            _title = "Antworten";
+            _back = _thread == null ? "/" : Links.Thread(_thread);
+            if (_thread == null || _forum == null || !perms.CanReadThread(u, _forum, _thread) || !perms.CanReply(u, _forum, _thread))
+                _error = "Du darfst in diesem Thema nicht antworten.";
+            else _title = $"Antworten: {_thread.DisplayTitle}";
+        }
+        else if (PostId > 0)
+        {
+            var p = await Posts.GetAsync(PostId);
+            _thread = p == null ? null : await Threads.GetAsync(p.ThreadId);
+            _forum = _thread == null ? null : _snap.Forum(_thread.ForumId);
+            _title = "Beitrag bearbeiten";
+            _back = p == null ? "/" : $"/post/{p.PostId}";
+            if (p == null || _thread == null || _forum == null || !perms.CanEditPost(u, _forum, _thread, p))
+                _error = "Du darfst diesen Beitrag nicht bearbeiten.";
+        }
+    }
+}

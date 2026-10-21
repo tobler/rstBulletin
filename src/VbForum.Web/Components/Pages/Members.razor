@@ -1,0 +1,145 @@
+@page "/members"
+@page "/user/{Id:long}"
+@page "/user/{Id:long}/{Slug}"
+@inject BoardCache Cache
+@inject CurrentUser Current
+@inject UserRepository Users
+@inject PostRepository Posts
+@inject PostRenderer Renderer
+
+<PageTitle>@(_profile?.DisplayName ?? "Mitglieder") – @_snap?.Settings.BoardName</PageTitle>
+
+@if (!_loaded) { return; }
+<main class="page container">
+    @if (Id > 0)
+    {
+        @if (_profile == null)
+        {
+            <div class="card card-pad"><h1 class="card-title">Mitglied nicht gefunden</h1></div>
+        }
+        else
+        {
+            <nav aria-label="Brotkrumen" class="breadcrumb"><a href="/members">Mitglieder</a><span aria-hidden="true">›</span><span class="current">@_profile.DisplayName</span></nav>
+            <div class="card card-pad row" style="gap:18px;align-items:center">
+                <Avatar UserId="_profile.UserId" Name="@_profile.DisplayName" HasAvatar="_profile.HasCustomAvatar > 0" Revision="_profile.AvatarRevision" Size="72" />
+                <div class="stack" style="gap:4px">
+                    <h1 style="font-size:24px">@_profile.DisplayName</h1>
+                    <span class="muted small">
+                        @GroupTitle(_profile.UserGroupId) · Mitglied seit @ForumTime.Date(_profile.JoinDate) · @ForumTime.Number(_profile.Posts) Beiträge · zuletzt aktiv @ForumTime.Relative(_profile.LastActivity)
+                    </span>
+                    @if (!string.IsNullOrWhiteSpace(_profile.Homepage)) { <a class="small" href="@VbForum.Core.BbCode.BbCodeRenderer.SafeUrl(_profile.Homepage)" rel="nofollow ugc noopener" target="_blank">@_profile.Homepage</a> }
+                    @foreach (var (k, v) in _fields.Where(f => !string.IsNullOrWhiteSpace(f.Value)))
+                    {
+                        <span class="small"><span class="muted">@(_snap!.ProfileFields.GetValueOrDefault(k, k)):</span> @v</span>
+                    }
+                </div>
+                <span class="spacer"></span>
+                @if (!_me!.IsGuest && _me.UserId != _profile.UserId)
+                {
+                    <a class="btn" href="/account/pm/new?to=@Uri.EscapeDataString(_profile.DisplayName)"><Icon Name="mail" />Nachricht senden</a>
+                }
+                @if (_me.IsAdmin)
+                {
+                    <a class="btn" href="/admin/users/@_profile.UserId"><Icon Name="settings" />Verwalten</a>
+                }
+            </div>
+            @if (!string.IsNullOrEmpty(_signature.Value))
+            {
+                <section class="card card-pad"><div class="small muted" style="margin-bottom:6px">Signatur</div><div class="post-body" style="font-size:14px">@_signature</div></section>
+            }
+            <section class="card">
+                <div class="card-head"><h2>Letzte Beiträge</h2><span class="small muted">@ForumTime.Number(_posts?.Total ?? 0)</span></div>
+                @foreach (var p in _posts?.Items ?? new List<Post>())
+                {
+                    <div class="thread-row" style="flex-direction:column;align-items:flex-start;gap:4px">
+                        <a href="/post/@p.PostId" class="thread-title">@HtmlUtil.PlainText(p.PageText, 160)</a>
+                        <span class="thread-sub">@ForumTime.Full(p.Dateline)</span>
+                    </div>
+                }
+                @if (_posts?.Items.Count == 0) { <div class="empty">Noch keine sichtbaren Beiträge.</div> }
+            </section>
+        }
+    }
+    else
+    {
+        <div class="page-head">
+            <div><h1>Mitglieder</h1><p>@ForumTime.Number(_snap!.TotalMembers) registrierte Mitglieder</p></div>
+            <form method="get" action="/members" class="row">
+                <div class="search-box" style="background:var(--card);flex:0 1 260px">
+                    <Icon Name="search" />
+                    <label for="mq" class="sr-only">Mitglied suchen</label>
+                    <input id="mq" name="q" type="search" value="@Q" placeholder="Name suchen" />
+                </div>
+                <select name="sort" data-autosubmit aria-label="Sortierung">
+                    <option value="posts" selected="@(Sort == "posts")">Meiste Beiträge</option>
+                    <option value="joindate" selected="@(Sort is null or "joindate")">Neueste</option>
+                    <option value="lastactivity" selected="@(Sort == "lastactivity")">Zuletzt aktiv</option>
+                    <option value="username" selected="@(Sort == "username")">Name</option>
+                </select>
+            </form>
+        </div>
+        <section class="card">
+            @foreach (var m in _list!.Items)
+            {
+                <div class="thread-row">
+                    <div class="thread-main" style="align-items:center">
+                        <Avatar UserId="m.UserId" Name="@m.DisplayName" HasAvatar="m.HasCustomAvatar > 0" Revision="m.AvatarRevision" Size="40" />
+                        <div class="stack" style="gap:2px">
+                            <a class="thread-title" style="font-weight:600" href="@Links.User(m.UserId, m.DisplayName)">@m.DisplayName</a>
+                            <span class="thread-sub">@GroupTitle(m.UserGroupId)</span>
+                        </div>
+                    </div>
+                    <div class="thread-counts"><strong>@ForumTime.Number(m.Posts)</strong> Beiträge</div>
+                    <div class="thread-last"><span class="muted">dabei seit @ForumTime.Date(m.JoinDate)</span><span class="muted">aktiv @ForumTime.Relative(m.LastActivity, false)</span></div>
+                </div>
+            }
+            @if (_list.Items.Count == 0) { <div class="empty">Keine Mitglieder gefunden.</div> }
+            <div class="list-foot">
+                <span>@ForumTime.Number(_list.Total) Treffer</span>
+                <Pager Page="_list.Page" PageCount="_list.PageCount" Href='p => Links.WithQuery("/members", new Dictionary<string, object?> { ["q"] = Q, ["sort"] = Sort, ["page"] = p > 1 ? p : null })' />
+            </div>
+        </section>
+    }
+</main>
+
+@code {
+    [Parameter] public long Id { get; set; }
+    [Parameter] public string? Slug { get; set; }
+    [SupplyParameterFromQuery] public string? Q { get; set; }
+    [SupplyParameterFromQuery] public string? Sort { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageQ { get; set; }
+
+    private bool _loaded;
+    private BoardSnapshot? _snap;
+    private ForumUser? _me;
+    private UserRow? _profile;
+    private Dictionary<string, string> _fields = new();
+    private MarkupString _signature;
+    private PagedResult<Post>? _posts;
+    private PagedResult<UserRow>? _list;
+
+    private string GroupTitle(int g) =>
+        _snap!.Groups.TryGetValue(g, out var gr) ? (string.IsNullOrWhiteSpace(gr.UserTitle) ? gr.DisplayTitle : HtmlUtil.CleanTitle(gr.UserTitle)) : "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _snap = await Cache.GetAsync();
+            _me = await Current.GetAsync();
+            if (Id > 0)
+            {
+                _profile = await Users.GetAsync(Id);
+                if (_profile == null) return;
+                _fields = await Users.ProfileFieldsAsync(Id, _snap.ProfileFields.Keys);
+                _signature = await Renderer.RenderSignatureAsync(await Users.SignatureAsync(Id));
+                _posts = await Posts.ByUserAsync(Id, new Permissions(_snap).ReadableOthersForumIds(_me), 1, 10);
+            }
+            else
+            {
+                _list = await Users.MemberListAsync(Q, Sort ?? "joindate", Math.Max(1, PageQ ?? 1), 30);
+            }
+        }
+        finally { _loaded = true; }
+    }
+}

@@ -1,0 +1,115 @@
+@page "/register"
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.DataProtection
+@inject AuthService Auth
+@inject BoardCache Cache
+@inject IDataProtectionProvider Protection
+@inject NavigationManager Nav
+
+<PageTitle>Registrieren</PageTitle>
+
+<main class="page container" style="align-items:center">
+    <div class="stack" style="width:min(480px,100%);gap:20px">
+        <div class="page-head"><div><h1>Registrieren</h1><p>Ein Konto bei @_settings?.BoardName anlegen.</p></div></div>
+
+        @if (_settings?.AllowRegistration != true)
+        {
+            <div class="alert alert-info">Registrierungen sind derzeit deaktiviert.</div>
+        }
+        else if (_done)
+        {
+            <div class="card card-pad stack" style="gap:10px">
+                <h2 class="card-title">Fast geschafft!</h2>
+                @if (_needsConfirm)
+                {
+                    <p style="margin:0">Wir haben dir eine E-Mail an <strong>@Input.Email</strong> geschickt. Bitte bestätige deine Adresse über den Link darin.</p>
+                }
+                else
+                {
+                    <p style="margin:0">Dein Konto ist eingerichtet. Du kannst dich jetzt anmelden.</p>
+                }
+                <p style="margin:0"><a class="btn btn-primary" href="/login">Zur Anmeldung</a></p>
+            </div>
+        }
+        else
+        {
+            <EditForm Model="Input" FormName="register" OnValidSubmit="SubmitAsync" class="card card-pad stack" Enhance>
+                <DataAnnotationsValidator />
+                @if (_error != null) { <div class="alert alert-err" role="alert">@_error</div> }
+                <div class="field">
+                    <label for="r-name">Benutzername</label>
+                    <InputText id="r-name" @bind-Value="Input.Username" autocomplete="username" maxlength="25" />
+                    <span class="hint">3–25 Zeichen. Unter diesem Namen erscheinen deine Beiträge.</span>
+                    <ValidationMessage For="() => Input.Username" />
+                </div>
+                <div class="field">
+                    <label for="r-mail">E-Mail-Adresse</label>
+                    <InputText id="r-mail" type="email" @bind-Value="Input.Email" autocomplete="email" />
+                    <ValidationMessage For="() => Input.Email" />
+                </div>
+                <div class="field">
+                    <label for="r-pw">Passwort</label>
+                    <InputText id="r-pw" type="password" @bind-Value="Input.Password" autocomplete="new-password" />
+                    <span class="hint">Mindestens 8 Zeichen.</span>
+                    <ValidationMessage For="() => Input.Password" />
+                </div>
+                <div class="field">
+                    <label for="r-pw2">Passwort wiederholen</label>
+                    <InputText id="r-pw2" type="password" @bind-Value="Input.Password2" autocomplete="new-password" />
+                    <ValidationMessage For="() => Input.Password2" />
+                </div>
+                @* Spam-Schutz: verstecktes Feld + Mindestzeit *@
+                <div aria-hidden="true" style="position:absolute;left:-5000px"><label>Website <InputText @bind-Value="Input.Website" tabindex="-1" autocomplete="off" /></label></div>
+                <input type="hidden" name="Input.Stamp" value="@_stamp" />
+                <label class="check" style="font-size:14px;align-items:flex-start"><InputCheckbox @bind-Value="Input.AcceptRules" style="margin-top:3px" />Ich akzeptiere die Forenregeln und die Datenschutzerklärung.</label>
+                <ValidationMessage For="() => Input.AcceptRules" />
+                <button type="submit" class="btn btn-primary" style="min-height:50px">Konto anlegen</button>
+            </EditForm>
+            <p class="muted" style="text-align:center;margin:0">Schon registriert? <a href="/login" style="font-weight:600;text-decoration:none">Anmelden</a></p>
+        }
+    </div>
+</main>
+
+@code {
+    public sealed class RegisterInput
+    {
+        [Required(ErrorMessage = "Bitte einen Benutzernamen eingeben.")] public string Username { get; set; } = "";
+        [Required(ErrorMessage = "Bitte eine E-Mail-Adresse eingeben.")] public string Email { get; set; } = "";
+        [Required(ErrorMessage = "Bitte ein Passwort eingeben.")] public string Password { get; set; } = "";
+        [Compare(nameof(Password), ErrorMessage = "Die Passwörter stimmen nicht überein.")] public string Password2 { get; set; } = "";
+        [Range(typeof(bool), "true", "true", ErrorMessage = "Bitte bestätige die Regeln.")] public bool AcceptRules { get; set; }
+        public string? Website { get; set; }
+        public string? Stamp { get; set; }
+    }
+
+    [CascadingParameter] public HttpContext HttpContext { get; set; } = default!;
+    [SupplyParameterFromForm] public RegisterInput Input { get; set; } = new();
+
+    private BoardSettings? _settings;
+    private string? _error, _stamp;
+    private bool _done, _needsConfirm;
+
+    private IDataProtector Protector => Protection.CreateProtector("vbf.register");
+
+    protected override async Task OnInitializedAsync()
+    {
+        _settings = (await Cache.GetAsync()).Settings;
+        _stamp = Protector.Protect(DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString());
+    }
+
+    private async Task SubmitAsync()
+    {
+        // Bots füllen das versteckte Feld aus bzw. sind schneller als 4 Sekunden
+        long started = 0;
+        try { started = long.Parse(Protector.Unprotect(Input.Stamp ?? "")); } catch { }
+        if (!string.IsNullOrEmpty(Input.Website) || DateTimeOffset.UtcNow.ToUnixTimeSeconds() - started < 4)
+        {
+            _error = "Das hat leider nicht geklappt. Bitte versuche es noch einmal.";
+            return;
+        }
+        var r = await Auth.RegisterAsync(Input.Username, Input.Email, Input.Password, HttpContext.ClientIp());
+        if (!r.Ok) { _error = r.Error; Input.Password = Input.Password2 = ""; return; }
+        _done = true;
+        _needsConfirm = r.NeedsConfirmation;
+    }
+}

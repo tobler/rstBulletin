@@ -1,0 +1,76 @@
+@page "/new"
+@inject BoardCache Cache
+@inject CurrentUser Current
+@inject ThreadRepository Threads
+
+<PageTitle>Neue Beiträge – @_snap?.Settings.BoardName</PageTitle>
+
+@if (!_loaded) { return; }
+<main class="page container">
+    <div class="page-head">
+        <div>
+            <h1>Neue Beiträge</h1>
+            <p>@_desc</p>
+        </div>
+        <div class="seg" role="group" aria-label="Zeitraum">
+            @if (!_user!.IsGuest)
+            {
+                <a href="/new" class="@(Range == null ? "on" : "")">Ungelesen</a>
+                <a href="/new?range=visit" class="@(Range == "visit" ? "on" : "")">Seit letztem Besuch</a>
+            }
+            <a href="/new?range=24h" class="@(Range == "24h" || (_user.IsGuest && Range == null) ? "on" : "")">24 Stunden</a>
+            <a href="/new?range=7d" class="@(Range == "7d" ? "on" : "")">7 Tage</a>
+        </div>
+    </div>
+
+    <section class="card">
+        @foreach (var t in _result!.Items)
+        {
+            <ThreadRow Thread="t" PostsPerPage="_snap!.Settings.PostsPerPage" ShowForum="true" />
+        }
+        @if (_result.Items.Count == 0)
+        {
+            <div class="empty">Nichts Neues – du bist auf dem aktuellen Stand.</div>
+        }
+        <div class="list-foot">
+            <span>@ForumTime.Number(_result.Total) Themen</span>
+            <Pager Page="_result.Page" PageCount="_result.PageCount" Href='p => Links.WithQuery("/new", new Dictionary<string, object?> { ["range"] = Range, ["page"] = p > 1 ? p : null })' />
+        </div>
+    </section>
+</main>
+
+@code {
+    [SupplyParameterFromQuery] public string? Range { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageQ { get; set; }
+
+    private bool _loaded;
+    private BoardSnapshot? _snap;
+    private ForumUser? _user;
+    private PagedResult<ForumThread>? _result;
+    private string _desc = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _snap = await Cache.GetAsync();
+            _user = await Current.GetAsync();
+            var perms = new Permissions(_snap);
+            var ids = perms.ReadableOthersForumIds(_user);
+            var cutoff = Links.UnreadCutoff(_snap.Settings);
+            long since; bool onlyUnread = false;
+            switch (Range)
+            {
+                case "visit" when !_user.IsGuest: since = _user.LastVisit; _desc = $"Seit deinem letzten Besuch ({ForumTime.Full(_user.LastVisit)})."; break;
+                case "7d": since = ForumTime.Now - 7 * 86400; _desc = "Themen mit Aktivität in den letzten 7 Tagen."; break;
+                case "24h": since = ForumTime.Now - 86400; _desc = "Themen mit Aktivität in den letzten 24 Stunden."; break;
+                default:
+                    if (_user.IsGuest) { since = ForumTime.Now - 86400; _desc = "Themen mit Aktivität in den letzten 24 Stunden."; }
+                    else { since = cutoff; onlyUnread = true; _desc = "Themen mit Beiträgen, die du noch nicht gelesen hast."; }
+                    break;
+            }
+            _result = await Threads.ListRecentAsync(ids, since, _user.UserId, cutoff, onlyUnread, Math.Max(1, PageQ ?? 1), _snap.Settings.ThreadsPerPage);
+        }
+        finally { _loaded = true; }
+    }
+}

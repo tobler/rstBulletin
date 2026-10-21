@@ -1,0 +1,105 @@
+@page "/admin/attachments"
+@page "/admin/log"
+@attribute [Authorize(Policy = "Admin")]
+@rendermode InteractiveServer
+@inject AttachmentRepository Attachments
+@inject TokenRepository Audit
+@inject CurrentUser Current
+@inject NavigationManager Nav
+
+<PageTitle>@(_log ? "Protokoll" : "Anhänge") – Administration</PageTitle>
+
+<main class="page container">
+    @if (_log)
+    {
+        <AdminShell Active="log" Title="Protokoll" Subtitle="Aktionen von Administratoren und Moderatoren in diesem Forum">
+            <section class="card">
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead><tr><th>Zeit</th><th>Benutzer</th><th>Aktion</th><th>Ziel</th><th class="hide-mobile">IP</th></tr></thead>
+                        <tbody>
+                            @foreach (var a in _audit)
+                            {
+                                <tr><td class="small nowrap">@ForumTime.Full(a.Dateline)</td><td>@a.Username</td><td><code>@a.Action</code></td><td class="small">@a.Target</td><td class="small hide-mobile">@a.Ip</td></tr>
+                            }
+                            @if (_audit.Count == 0) { <tr><td colspan="5" class="muted">Noch keine Einträge.</td></tr> }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </AdminShell>
+    }
+    else
+    {
+        <AdminShell Active="att" Title="Anhänge" Subtitle="@($"{ForumTime.Number(_stats?.Count ?? 0)} Dateien · {HtmlUtil.FormatBytes(_stats?.Bytes ?? 0)} in der Datenbank")">
+            @if (_msg != null) { <div class="alert alert-ok" role="status">@_msg</div> }
+            <section class="card">
+                <div class="card-head"><h2>Größte Anhänge</h2></div>
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead><tr><th>Datei</th><th class="num">Größe</th><th class="hide-mobile">Thema</th><th class="hide-mobile">Von</th><th class="hide-mobile">Datum</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var (a, tid, title, user) in _largest)
+                            {
+                                <tr>
+                                    <td><a href="/attachment/@a.AttachmentId" target="_blank">@a.DisplayName</a>@if (a.Width > 0) { <div class="small muted">@a.Width × @a.Height</div> }</td>
+                                    <td class="num nowrap">@HtmlUtil.FormatBytes(a.FileSize)</td>
+                                    <td class="hide-mobile small">@if (tid > 0) { <a href="/post/@a.ContentId" target="_blank">@HtmlUtil.CleanTitle(title)</a> }</td>
+                                    <td class="hide-mobile small">@HtmlUtil.CleanTitle(user)</td>
+                                    <td class="hide-mobile small nowrap">@ForumTime.Date(a.Dateline)</td>
+                                    <td><button type="button" class="btn btn-sm btn-ghost btn-danger" title="Anhang löschen" @onclick="() => _confirm = a"><Icon Name="trash" Size="16" /></button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </AdminShell>
+    }
+</main>
+
+@if (_confirm != null)
+{
+    <div class="modal-back" @onclick="() => _confirm = null">
+        <div class="modal" role="alertdialog" aria-modal="true" @onclick:stopPropagation>
+            <h2 class="card-title">„@_confirm.DisplayName“ löschen?</h2>
+            <p class="muted" style="margin:0">Die Datei verschwindet aus dem Beitrag. Das kann nicht rückgängig gemacht werden.</p>
+            <div class="form-actions">
+                <button type="button" class="btn" @onclick="() => _confirm = null">Abbrechen</button>
+                <button type="button" class="btn btn-danger" @onclick="Delete">Löschen</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _log;
+    private List<TokenRepository.AuditEntry> _audit = new();
+    private AttachmentRepository.Stats? _stats;
+    private List<(Attachment A, long ThreadId, string ThreadTitle, string Username)> _largest = new();
+    private Attachment? _confirm;
+    private string? _msg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _log = Nav.ToBaseRelativePath(Nav.Uri).StartsWith("admin/log");
+        if (_log) _audit = await Audit.AuditAsync(300);
+        else await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _stats = await Attachments.StatsAsync();
+        _largest = await Attachments.LargestAsync(50);
+    }
+
+    private async Task Delete()
+    {
+        var a = _confirm!;
+        _confirm = null;
+        await Attachments.DeleteAsync(a.AttachmentId);
+        await Audit.LogAsync(await Current.GetAsync(), "attachment.delete", $"{a.AttachmentId} {a.DisplayName}", "");
+        _msg = $"„{a.DisplayName}“ gelöscht.";
+        await LoadAsync();
+    }
+}

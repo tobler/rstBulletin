@@ -1,0 +1,149 @@
+@page "/search"
+@inject SearchService SearchSvc
+@inject BoardCache Cache
+@inject CurrentUser Current
+
+<PageTitle>Suche – @_snap?.Settings.BoardName</PageTitle>
+
+@if (!_loaded) { return; }
+<main class="page container">
+    <h1 style="font-size:26px">Suche</h1>
+
+    <form role="search" method="get" action="/search" class="card card-pad stack" style="gap:14px">
+        <div class="row" style="gap:10px">
+            <div class="search-box" style="flex:999 1 320px;min-height:48px;background:var(--card);border-color:var(--muted)">
+                <Icon Name="search" Size="20" />
+                <label for="sq" class="sr-only">Suchbegriff</label>
+                <input id="sq" name="q" type="search" value="@Q" style="font-size:16px" placeholder="Wonach suchst du?" autofocus />
+            </div>
+            <button type="submit" class="btn btn-primary" style="flex:1 1 120px;min-height:48px">Suchen</button>
+        </div>
+        <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+            <div class="field">
+                <label for="s-in">Suchen in</label>
+                <select id="s-in" name="in">
+                    <option value="" selected="@(In != "titles")">Titel und Beiträgen</option>
+                    <option value="titles" selected="@(In == "titles")">Nur Thementiteln</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="s-forum">Forum</label>
+                <select id="s-forum" name="forum">
+                    <option value="">Alle Foren</option>
+                    @foreach (var f in _forums)
+                    {
+                        <option value="@f.ForumId" selected="@(Forum == f.ForumId)">@(new string(' ', f.Depth * 3))@f.DisplayTitle</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label for="s-user">Von Benutzer</label>
+                <input id="s-user" name="user" value="@User" placeholder="Benutzername" />
+            </div>
+            <div class="field">
+                <label for="s-zeit">Zeitraum</label>
+                <select id="s-zeit" name="range">
+                    @foreach (var (v, l) in Ranges)
+                    {
+                        <option value="@v" selected="@(v == (Range ?? ""))">@l</option>
+                    }
+                </select>
+            </div>
+        </div>
+        <input type="hidden" name="sort" value="@Sort" />
+    </form>
+
+    @if (_result != null)
+    {
+        @if (_result.Notice != null) { <div class="alert alert-info">@_result.Notice</div> }
+        <div class="row" style="justify-content:space-between">
+            <span class="muted" style="font-size:14px">
+                @if (_result.Hits.Count == 0) { <text>Keine Treffer.</text> }
+                else { <strong style="color:var(--ink)">@(_result.HasMore ? $"Mehr als {(_page - 1) * PageSize + _result.Hits.Count}" : $"{(_page - 1) * PageSize + _result.Hits.Count}") Treffer</strong> }
+            </span>
+            <div class="row" role="group" aria-label="Sortierung" style="gap:6px">
+                @foreach (var (v, l) in Sorts)
+                {
+                    <a href="@Url(1, v)" class="btn btn-sm" style="@(v == (Sort ?? "rel") ? "background:var(--ink);color:var(--card);border-color:var(--ink)" : "")" aria-current="@(v == (Sort ?? "rel") ? "true" : null)">@l</a>
+                }
+            </div>
+        </div>
+
+        <section class="stack" style="gap:10px" aria-label="Suchergebnisse">
+            @foreach (var h in _result.Hits)
+            {
+                var (pre, hit, post) = SearchService.Highlight(h.PageText, Q ?? "");
+                <article class="card card-pad stack" style="gap:6px;padding:16px 20px">
+                    <div class="small muted">@ForumPath(h.ForumId)</div>
+                    <a href="/post/@h.PostId" style="font-size:16px;font-weight:650;color:var(--ink);text-decoration:none">@HtmlUtil.CleanTitle(h.ThreadTitle)</a>
+                    <p style="margin:0;font-size:14px;line-height:1.55;color:var(--ink-2)">@pre<mark>@hit</mark>@post</p>
+                    <div class="row small muted" style="gap:10px">
+                        <Avatar UserId="h.UserId" Name="@HtmlUtil.CleanTitle(h.Username)" Size="24" />
+                        <span>@HtmlUtil.CleanTitle(h.Username) · @ForumTime.Full(h.Dateline)</span>
+                        <a href="/post/@h.PostId" style="margin-left:auto;font-weight:600;text-decoration:none">Zum Beitrag →</a>
+                    </div>
+                </article>
+            }
+        </section>
+
+        <div class="row" style="justify-content:space-between">
+            @if (_page > 1) { <a class="btn" href="@Url(_page - 1, Sort)">← Vorherige</a> } else { <span></span> }
+            @if (_result.HasMore) { <a class="btn" href="@Url(_page + 1, Sort)">Weitere Treffer →</a> }
+        </div>
+    }
+</main>
+
+@code {
+    private const int PageSize = 20;
+    private static readonly (string, string)[] Ranges =
+        { ("", "Beliebig"), ("7", "Letzte 7 Tage"), ("30", "Letzte 30 Tage"), ("365", "Letztes Jahr"), ("visit", "Seit letztem Besuch") };
+    private static readonly (string, string)[] Sorts = { ("rel", "Relevanz"), ("new", "Neueste zuerst"), ("old", "Älteste zuerst") };
+
+    [SupplyParameterFromQuery] public string? Q { get; set; }
+    [SupplyParameterFromQuery] public string? In { get; set; }
+    [SupplyParameterFromQuery] public int? Forum { get; set; }
+    [SupplyParameterFromQuery] public string? User { get; set; }
+    [SupplyParameterFromQuery] public string? Range { get; set; }
+    [SupplyParameterFromQuery] public string? Sort { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageQ { get; set; }
+
+    private bool _loaded;
+    private BoardSnapshot? _snap;
+    private List<Forum> _forums = new();
+    private SearchResult? _result;
+    private int _page = 1;
+
+    private string Url(int page, string? sort) => Links.WithQuery("/search", new Dictionary<string, object?>
+    {
+        ["q"] = Q, ["in"] = In, ["forum"] = Forum, ["user"] = User, ["range"] = Range,
+        ["sort"] = sort == "rel" ? null : sort, ["page"] = page > 1 ? page : null
+    });
+
+    private string ForumPath(int forumId) =>
+        _snap!.Forum(forumId) is { } f ? string.Join(" › ", _snap.Breadcrumb(f).Select(x => x.DisplayTitle)) : "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _snap = await Cache.GetAsync();
+            var u = await Current.GetAsync();
+            var perms = new Permissions(_snap);
+            _forums = _snap.Flatten().Where(f => perms.CanSeeForum(u, f)).ToList();
+            if (string.IsNullOrWhiteSpace(Q) && string.IsNullOrWhiteSpace(User)) return;
+            _page = Math.Max(1, PageQ ?? 1);
+            long? since = Range switch
+            {
+                "7" => ForumTime.Now - 7 * 86400, "30" => ForumTime.Now - 30 * 86400, "365" => ForumTime.Now - 365 * 86400,
+                "visit" when !u.IsGuest => u.LastVisit, _ => null
+            };
+            _result = await SearchSvc.SearchAsync(new SearchQuery
+            {
+                Text = Q ?? "", TitlesOnly = In == "titles", ForumId = Forum, Username = User, Since = since,
+                Sort = Sort switch { "new" => SearchSort.Newest, "old" => SearchSort.Oldest, _ => SearchSort.Relevance },
+                Page = _page, PageSize = PageSize
+            }, u);
+        }
+        finally { _loaded = true; }
+    }
+}

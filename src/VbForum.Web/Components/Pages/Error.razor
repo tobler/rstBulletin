@@ -1,0 +1,18 @@
+@page "/Error"
+@using System.Diagnostics
+
+<PageTitle>Fehler</PageTitle>
+<main class="page container">
+    <div class="card card-pad narrow stack" style="gap:10px">
+        <h1 class="card-title">Da ist etwas schiefgelaufen</h1>
+        <p class="muted" style="margin:0">Beim Verarbeiten der Anfrage ist ein Fehler aufgetreten. Bitte versuche es erneut.</p>
+        @if (!string.IsNullOrEmpty(RequestId)) { <p class="small muted" style="margin:0">Fehler-ID: <code>@RequestId</code></p> }
+        <p style="margin:0"><a class="btn" href="/">Zur Startseite</a></p>
+    </div>
+</main>
+
+@code {
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+    private string? RequestId { get; set; }
+    protected override void OnInitialized() => RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+}

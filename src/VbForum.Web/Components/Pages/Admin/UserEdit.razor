@@ -1,0 +1,185 @@
+@page "/admin/users/{Id:long}"
+@attribute [Authorize(Policy = "Admin")]
+@rendermode InteractiveServer
+@inject UserRepository Users
+@inject BoardCache Cache
+@inject CurrentUser Current
+@inject TokenRepository Audit
+@inject NavigationManager Nav
+
+<PageTitle>Benutzer bearbeiten – Administration</PageTitle>
+
+<main class="page container">
+    <AdminShell Active="users" Title="@(_u?.DisplayName ?? "Benutzer")" Subtitle="@(_u == null ? null : $"#{_u.UserId} · registriert {ForumTime.Full(_u.JoinDate)} · zuletzt aktiv {ForumTime.Relative(_u.LastActivity)} · IP {_u.IpAddress}")">
+        @if (_u == null) { <div class="card empty">Benutzer nicht gefunden.</div> }
+        else
+        {
+            <nav class="breadcrumb"><a href="/admin/users">Benutzer</a><span aria-hidden="true">›</span><span class="current">@_u.DisplayName</span></nav>
+            @if (_msg != null) { <div class="alert alert-ok" role="status">@_msg</div> }
+            @if (_err != null) { <div class="alert alert-err" role="alert">@_err</div> }
+            @if (_ban != null)
+            {
+                <div class="alert alert-warn">Gesperrt seit @ForumTime.Full(_ban.Value.BanDate)@(_ban.Value.LiftDate > 0 ? $" bis {ForumTime.Full(_ban.Value.LiftDate)}" : " (dauerhaft)")@(string.IsNullOrEmpty(_ban.Value.Reason) ? "" : $" – {HtmlUtil.CleanTitle(_ban.Value.Reason)}")</div>
+            }
+
+            <section class="card card-pad stack">
+                <div class="row" style="justify-content:space-between">
+                    <h2 class="card-title" style="margin:0">Konto</h2>
+                    <a class="btn btn-sm" href="@Links.User(_u.UserId, _u.DisplayName)" target="_blank">Profil ansehen</a>
+                </div>
+                <div class="form-grid">
+                    <div class="field"><label for="ue-n">Benutzername</label><input id="ue-n" @bind="_name" maxlength="100" /><span class="hint">Umbenennen ändert auch den Namen an allen Beiträgen.</span></div>
+                    <div class="field"><label for="ue-e">E-Mail</label><input id="ue-e" type="email" @bind="_email" /></div>
+                    <GroupSelect Label="Hauptgruppe" @bind-Value="_group" Groups="_groups" />
+                    <div class="field"><label for="ue-t">Benutzertitel</label><input id="ue-t" @bind="_title" /><label class="check small"><input type="checkbox" @bind="_customTitle" />eigener Titel (nicht automatisch)</label></div>
+                    <div class="field"><label for="ue-h">Website</label><input id="ue-h" @bind="_homepage" /></div>
+                    <div class="field"><label for="ue-p">Beitragszähler</label><input id="ue-p" type="number" @bind="_posts" /></div>
+                </div>
+                <div class="field">
+                    <span class="label">Zusätzliche Gruppen</span>
+                    <div class="chips">
+                        @foreach (var g in _groups.Where(g => g.UserGroupId != _group))
+                        {
+                            <label class="chip" style="cursor:pointer"><input type="checkbox" checked="@_member.Contains(g.UserGroupId)" @onchange="() => ToggleMember(g.UserGroupId)" />@g.DisplayTitle</label>
+                        }
+                    </div>
+                </div>
+                <div class="form-actions"><button type="button" class="btn btn-primary" @onclick="Save">Speichern</button></div>
+            </section>
+
+            <section class="card card-pad stack">
+                <h2 class="card-title">Passwort setzen</h2>
+                <div class="row">
+                    <input class="input" style="flex:1 1 240px" type="text" @bind="_newPw" placeholder="Neues Passwort (mind. 8 Zeichen)" autocomplete="off" aria-label="Neues Passwort" />
+                    <button type="button" class="btn" @onclick="GeneratePw">Generieren</button>
+                    <button type="button" class="btn btn-primary" @onclick="SetPassword">Setzen</button>
+                </div>
+                <span class="hint">Der Benutzer wird danach auf allen Geräten abgemeldet.</span>
+            </section>
+
+            <section class="card card-pad stack">
+                <h2 class="card-title">Sperren</h2>
+                @if (_ban == null)
+                {
+                    <div class="form-grid">
+                        <div class="field">
+                            <label for="ub-d">Dauer</label>
+                            <select id="ub-d" @bind="_banDays"><option value="1">1 Tag</option><option value="7">7 Tage</option><option value="30">30 Tage</option><option value="365">1 Jahr</option><option value="0">Dauerhaft</option></select>
+                        </div>
+                        <div class="field"><label for="ub-r">Grund (für den Benutzer sichtbar)</label><input id="ub-r" @bind="_banReason" maxlength="200" /></div>
+                    </div>
+                    <div class="form-actions"><button type="button" class="btn btn-danger" @onclick="Ban" disabled="@IsSelf">Sperren</button></div>
+                }
+                else
+                {
+                    <div class="form-actions"><button type="button" class="btn" @onclick="Unban">Sperre aufheben</button></div>
+                }
+            </section>
+
+            <section class="card card-pad stack">
+                <h2 class="card-title" style="color:var(--danger)">Konto löschen</h2>
+                <p class="small muted" style="margin:0">Beiträge bleiben als Gastbeiträge erhalten. Private Nachrichten, Abos und Profil werden entfernt.</p>
+                <div class="row">
+                    <input class="input" style="flex:1 1 240px" @bind="_confirmName" @bind:event="oninput" placeholder="Zur Bestätigung den Benutzernamen eingeben" aria-label="Benutzername zur Bestätigung" />
+                    <button type="button" class="btn btn-danger" disabled="@(_confirmName != _u.DisplayName || IsSelf)" @onclick="Delete">Endgültig löschen</button>
+                </div>
+            </section>
+        }
+    </AdminShell>
+</main>
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private UserRow? _u;
+    private List<UserGroup> _groups = new();
+    private HashSet<int> _member = new();
+    private (long BanDate, long LiftDate, string Reason)? _ban;
+    private string _name = "", _email = "", _title = "", _homepage = "", _banReason = "";
+    private string? _newPw, _confirmName, _msg, _err;
+    private int _group, _banDays = 7;
+    private long _posts;
+    private bool _customTitle;
+    private long _meId;
+
+    private bool IsSelf => _u?.UserId == _meId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _meId = (await Current.GetAsync()).UserId;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var snap = await Cache.GetAsync();
+        _groups = snap.Groups.Values.OrderBy(g => g.UserGroupId).ToList();
+        _u = await Users.GetAsync(Id);
+        if (_u == null) return;
+        _name = _u.DisplayName; _email = _u.Email; _group = _u.UserGroupId; _title = HtmlUtil.CleanTitle(_u.UserTitle);
+        _customTitle = _u.CustomTitle == 1; _homepage = _u.Homepage; _posts = _u.Posts;
+        _member = _u.MemberGroupIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => int.TryParse(x.Trim(), out var i) ? i : 0).Where(i => i > 0).ToHashSet();
+        _ban = await Users.BanInfoAsync(Id);
+    }
+
+    private void ToggleMember(int g) { if (!_member.Remove(g)) _member.Add(g); }
+
+    private async Task Save()
+    {
+        _msg = _err = null;
+        if (string.IsNullOrWhiteSpace(_name)) { _err = "Der Benutzername darf nicht leer sein."; return; }
+        if (await Users.NameExistsAsync(_name, Id)) { _err = "Dieser Benutzername ist bereits vergeben."; return; }
+        if (!string.IsNullOrWhiteSpace(_email) && !AuthService.ValidEmail(_email)) { _err = "Die E-Mail-Adresse ist ungültig."; return; }
+        var adminGroups = (await Cache.GetAsync()).Settings.AdminGroups;
+        if (IsSelf && !adminGroups.Contains(_group) && !_member.Any(adminGroups.Contains))
+        { _err = "Du kannst dir nicht selbst die Administratorrechte entziehen."; return; }
+        _member.Remove(_group);
+        await Users.AdminUpdateAsync(Id, _name, _email, _group, string.Join(",", _member.OrderBy(x => x)), _title, _customTitle, _homepage, _posts);
+        await Audit.LogAsync(await Current.GetAsync(), "user.edit", $"{Id} {_name}", "");
+        Cache.Invalidate();
+        _msg = "Gespeichert.";
+        await LoadAsync();
+    }
+
+    private void GeneratePw() => _newPw = VbForum.Core.Security.VbPassword.RandomToken(9);
+
+    private async Task SetPassword()
+    {
+        _msg = _err = null;
+        if (AuthService.PasswordProblem(_newPw ?? "") is { } p) { _err = p; return; }
+        await Users.SetPasswordAsync(Id, _newPw!, (await Cache.GetAsync()).Settings.SyncLegacyPassword);
+        await Audit.LogAsync(await Current.GetAsync(), "user.password", $"{Id} {_u!.DisplayName}", "");
+        _msg = $"Passwort gesetzt: {_newPw} – bitte sicher an den Benutzer weitergeben.";
+        _newPw = null;
+    }
+
+    private async Task Ban()
+    {
+        var s = (await Cache.GetAsync()).Settings;
+        var banned = s.BannedGroups.FirstOrDefault();
+        if (banned == 0) { _err = "In den Einstellungen ist keine Gesperrt-Gruppe hinterlegt."; return; }
+        var lift = _banDays > 0 ? ForumTime.Now + _banDays * 86400L : 0;
+        await Users.BanAsync(Id, banned, _meId, _banReason, lift);
+        await Audit.LogAsync(await Current.GetAsync(), "user.ban", $"{Id} {_u!.DisplayName} {(_banDays > 0 ? _banDays + " Tage" : "dauerhaft")}", "");
+        _msg = "Benutzer gesperrt.";
+        await LoadAsync();
+    }
+
+    private async Task Unban()
+    {
+        await Users.UnbanAsync(Id, (await Cache.GetAsync()).Settings.RegisteredGroupId);
+        await Audit.LogAsync(await Current.GetAsync(), "user.unban", $"{Id} {_u!.DisplayName}", "");
+        _msg = "Sperre aufgehoben.";
+        await LoadAsync();
+    }
+
+    private async Task Delete()
+    {
+        if (IsSelf) return;
+        var name = _u!.DisplayName;
+        await Users.DeleteAsync(Id);
+        await Audit.LogAsync(await Current.GetAsync(), "user.delete", $"{Id} {name}", "");
+        Cache.Invalidate();
+        Nav.NavigateTo("/admin/users");
+    }
+}

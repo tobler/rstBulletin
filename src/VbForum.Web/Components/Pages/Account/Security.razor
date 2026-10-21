@@ -1,0 +1,87 @@
+@page "/account/password"
+@page "/account/email"
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@inject CurrentUser Current
+@inject AuthService Auth
+@inject UserRepository Users
+@inject NavigationManager Nav
+
+<PageTitle>@(_isEmail ? "E-Mail-Adresse" : "Passwort")</PageTitle>
+
+@if (!_loaded) { return; }
+<main class="page container">
+    <AccountShell User="_user!" Active="@(_isEmail ? "email" : "password")">
+        @if (_message != null) { <div class="alert alert-ok narrow" role="status">@_message</div> }
+        @if (_error != null) { <div class="alert alert-err narrow" role="alert">@_error</div> }
+
+        @if (_isEmail)
+        {
+            <EditForm Model="Mail" FormName="email" OnSubmit="SaveEmailAsync" class="card card-pad stack narrow" Enhance>
+                <div><h2 class="card-title">E-Mail-Adresse</h2><p class="muted small" style="margin:0">An diese Adresse gehen Benachrichtigungen und Links zum Zurücksetzen des Passworts.</p></div>
+                <div class="field"><label for="em-cur">Aktuelle Adresse</label><input id="em-cur" value="@_email" disabled /></div>
+                <div class="field"><label for="em-new">Neue Adresse</label><InputText id="em-new" type="email" @bind-Value="Mail.Email" autocomplete="email" /></div>
+                <div class="field"><label for="em-pw">Passwort zur Bestätigung</label><InputText id="em-pw" type="password" @bind-Value="Mail.Password" autocomplete="current-password" /></div>
+                <div class="form-actions"><button type="submit" class="btn btn-primary">E-Mail-Adresse ändern</button></div>
+            </EditForm>
+        }
+        else
+        {
+            <EditForm Model="Pw" FormName="password" OnSubmit="SavePasswordAsync" class="card card-pad stack narrow" Enhance>
+                <div><h2 class="card-title">Passwort ändern</h2><p class="muted small" style="margin:0">Nach der Änderung wirst du auf allen anderen Geräten abgemeldet.</p></div>
+                <div class="field"><label for="pw-old">Aktuelles Passwort</label><InputText id="pw-old" type="password" @bind-Value="Pw.Current" autocomplete="current-password" /></div>
+                <div class="field"><label for="pw-new">Neues Passwort</label><InputText id="pw-new" type="password" @bind-Value="Pw.New" autocomplete="new-password" /><span class="hint">Mindestens 8 Zeichen.</span></div>
+                <div class="field"><label for="pw-rep">Neues Passwort wiederholen</label><InputText id="pw-rep" type="password" @bind-Value="Pw.Repeat" autocomplete="new-password" /></div>
+                <div class="form-actions"><button type="submit" class="btn btn-primary">Passwort ändern</button></div>
+            </EditForm>
+        }
+    </AccountShell>
+</main>
+
+@code {
+    public sealed class PwInput { public string Current { get; set; } = ""; public string New { get; set; } = ""; public string Repeat { get; set; } = ""; }
+    public sealed class MailInput { public string Email { get; set; } = ""; public string Password { get; set; } = ""; }
+
+    [CascadingParameter] public HttpContext HttpContext { get; set; } = default!;
+    [SupplyParameterFromForm(FormName = "password")] public PwInput Pw { get; set; } = new();
+    [SupplyParameterFromForm(FormName = "email")] public MailInput Mail { get; set; } = new();
+
+    private bool _loaded, _isEmail;
+    private ForumUser? _user;
+    private string _email = "";
+    private string? _message, _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _isEmail = Nav.ToBaseRelativePath(Nav.Uri).StartsWith("account/email");
+            _user = await Current.GetAsync();
+            _email = _user.Email;
+        }
+        finally { _loaded = true; }
+    }
+
+    private async Task SavePasswordAsync()
+    {
+        if (Pw.New != Pw.Repeat) { _error = "Die neuen Passwörter stimmen nicht überein."; return; }
+        var err = await Auth.ChangePasswordAsync(_user!.UserId, Pw.Current, Pw.New);
+        if (err != null) { _error = err; return; }
+        // Eigene Sitzung mit neuem Stempel erneuern; alle anderen werden beim nächsten Abgleich ungültig
+        var row = await Users.GetAsync(_user.UserId);
+        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme,
+            AuthSetup.CreatePrincipal(row!.UserId, row.DisplayName, AuthService.Stamp(row)), new AuthenticationProperties { IsPersistent = true });
+        Pw = new();
+        _message = "Dein Passwort wurde geändert.";
+    }
+
+    private async Task SaveEmailAsync()
+    {
+        var err = await Auth.ChangeEmailAsync(_user!.UserId, Mail.Password, Mail.Email);
+        if (err != null) { _error = err; return; }
+        _email = Mail.Email.Trim();
+        Mail = new();
+        _message = "Deine E-Mail-Adresse wurde geändert.";
+    }
+}

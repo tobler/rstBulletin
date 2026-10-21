@@ -1,0 +1,21 @@
+@if (HasAvatar && UserId > 0)
+{
+    <img class="avatar" style="--size:@(Size)px" src="@($"/avatar/{UserId}?v={Revision}{(Size <= 40 ? "&size=s" : "")}")" alt="" loading="lazy" />
+}
+else
+{
+    <span class="avatar @ColorClass" style="--size:@(Size)px" aria-hidden="true">@HtmlUtil.Initials(Name)</span>
+}
+
+@code {
+    [Parameter] public long UserId { get; set; }
+    [Parameter] public string? Name { get; set; }
+    [Parameter] public bool HasAvatar { get; set; }
+    [Parameter] public long Revision { get; set; }
+    [Parameter] public int Size { get; set; } = 34;
+
+    private string ColorClass => (Math.Abs(UserId == 0 ? (Name ?? "").Sum(c => (int)c) : UserId) % 4) switch
+    {
+        1 => "c1", 2 => "c2", 3 => "c3", _ => ""
+    };
+}

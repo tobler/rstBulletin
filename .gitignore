@@ -1,0 +1,7 @@
+bin/
+obj/
+.vs/
+*.user
+# Laufzeitdaten: DB-Zugang, Schlüssel, Logo, Bild-Cache – nie einchecken
+**/App_Data/
+publish/

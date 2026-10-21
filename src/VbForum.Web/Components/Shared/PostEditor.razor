@@ -1,0 +1,277 @@
+@using Microsoft.AspNetCore.Components.Forms
+@implements IDisposable
+@inject CurrentUser Current
+@inject BoardCache Cache
+@inject PostingService Posting
+@inject PostRepository Posts
+@inject ThreadRepository Threads
+@inject AttachmentRepository Attachments
+@inject PostRenderer Renderer
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<div class="stack" style="gap:12px">
+    @if (_error != null) { <div class="alert alert-err" role="alert">@_error</div> }
+
+    @if (ShowTitle)
+    {
+        <div class="field">
+            <label for="@($"{_id}-title")">Titel</label>
+            <input id="@($"{_id}-title")" class="input" @bind="_title" @bind:event="oninput" maxlength="@PostingService.MaxTitle" placeholder="Worum geht es?" />
+        </div>
+    }
+
+    <div>
+        <div class="editor-toolbar" role="toolbar" aria-label="Formatierung">
+            <button type="button" aria-label="Fett" @onclick='() => Wrap("[b]", "[/b]")'><strong>B</strong></button>
+            <button type="button" aria-label="Kursiv" @onclick='() => Wrap("[i]", "[/i]")'><em>I</em></button>
+            <button type="button" aria-label="Unterstrichen" @onclick='() => Wrap("[u]", "[/u]")'><u>U</u></button>
+            <button type="button" aria-label="Link" @onclick='() => Wrap("[url]", "[/url]")'><Icon Name="link" /></button>
+            <button type="button" aria-label="Bild per URL" @onclick='() => Wrap("[img]", "[/img]")'><Icon Name="image" /></button>
+            <button type="button" aria-label="Zitat" @onclick='() => Wrap("[quote]", "[/quote]")'><Icon Name="quote" /></button>
+            <button type="button" aria-label="Code" @onclick='() => Wrap("[code]", "[/code]")'><Icon Name="code" /></button>
+            <button type="button" aria-label="Liste" @onclick='() => Wrap("[list]\n[*]", "\n[/list]")'><Icon Name="list" /></button>
+            @foreach (var s in _smilies)
+            {
+                <button type="button" aria-label="Smilie @s.Title" title="@s.Title" @onclick="() => Insert(HtmlUtil.CleanTitle(s.SmilieText))">
+                    <img src="@(s.SmiliePath.StartsWith('/') || s.SmiliePath.StartsWith("http") ? s.SmiliePath : "/" + s.SmiliePath)" alt="" style="height:20px" />
+                </button>
+            }
+            <span class="spacer"></span>
+            <button type="button" style="width:auto;padding:0 10px;font-size:13px;font-weight:600" @onclick="TogglePreview">@(_preview ? "Bearbeiten" : "Vorschau")</button>
+        </div>
+        @if (_preview)
+        {
+            <div class="preview-box post-body" style="border-radius:0 0 10px 10px;min-height:200px">@_previewHtml</div>
+        }
+        else
+        {
+            <label for="@($"{_id}-text")" class="sr-only">Beitragstext</label>
+            <textarea id="@($"{_id}-text")" class="editor-text" rows="@(Compact ? 6 : 14)" @bind="_text" @bind:event="oninput" @bind:after="SaveDraft"
+                      placeholder="Schreib deine Nachricht … BBCode wird unterstützt."></textarea>
+        }
+    </div>
+
+    @if (_existing.Count > 0)
+    {
+        <div class="stack" style="gap:6px">
+            <span class="small" style="font-weight:600">Vorhandene Anhänge</span>
+            <div class="upload-list">
+                @foreach (var a in _existing)
+                {
+                    <span class="upload-item" style="@(_remove.Contains(a.AttachmentId) ? "opacity:.5;text-decoration:line-through" : "")">
+                        @a.DisplayName (@HtmlUtil.FormatBytes(a.FileSize))
+                        <button type="button" class="btn btn-ghost btn-sm" @onclick="() => ToggleRemove(a.AttachmentId)">@(_remove.Contains(a.AttachmentId) ? "Behalten" : "Entfernen")</button>
+                    </span>
+                }
+            </div>
+        </div>
+    }
+
+    @if (_uploads.Count > 0)
+    {
+        <div class="upload-list" aria-label="Neue Anhänge">
+            @foreach (var u in _uploads)
+            {
+                <span class="upload-item"><Icon Name="paperclip" Size="14" />@u.FileName (@HtmlUtil.FormatBytes(u.Data.Length))
+                    <button type="button" class="btn btn-ghost btn-sm" aria-label="@u.FileName entfernen" @onclick="() => _uploads.Remove(u)"><Icon Name="x" Size="14" /></button>
+                </span>
+            }
+        </div>
+    }
+
+    @if (EditPostId > 0)
+    {
+        <div class="field">
+            <label for="@($"{_id}-reason")">Grund der Bearbeitung (optional)</label>
+            <input id="@($"{_id}-reason")" class="input" @bind="_reason" maxlength="120" />
+        </div>
+    }
+
+    <div class="row" style="justify-content:space-between">
+        @if (_canAttach)
+        {
+            <label class="file-drop">
+                <Icon Name="paperclip" />Anhang / Bild hinzufügen
+                <InputFile OnChange="OnFiles" multiple accept="@_accept" />
+            </label>
+        }
+        else { <span></span> }
+        <div class="row">
+            @if (CancelUrl != null) { <a href="@CancelUrl" class="btn">Abbrechen</a> }
+            <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="SubmitAsync">
+                <Icon Name="send" />@(_busy ? "Wird gesendet …" : EditPostId > 0 ? "Speichern" : ForumId > 0 ? "Thema erstellen" : "Antwort senden")
+            </button>
+        </div>
+    </div>
+    @if (_canAttach)
+    {
+        <span class="small muted">Erlaubt: @_settings?.AttachmentExtensions · max. @(_settings?.MaxAttachmentKb / 1024.0 is double mb && mb >= 1 ? $"{mb:0.#} MB" : $"{_settings?.MaxAttachmentKb} KB") pro Datei · Bilder bekommen automatisch eine Vorschau.</span>
+    }
+</div>
+
+@code {
+    /// <summary>Neues Thema in diesem Forum.</summary>
+    [Parameter] public int ForumId { get; set; }
+    /// <summary>Antwort auf dieses Thema.</summary>
+    [Parameter] public long ThreadId { get; set; }
+    /// <summary>Beitrag bearbeiten.</summary>
+    [Parameter] public long EditPostId { get; set; }
+    [Parameter] public long QuotePostId { get; set; }
+    [Parameter] public bool Compact { get; set; }
+    [Parameter] public string? CancelUrl { get; set; }
+    [Parameter] public string Ip { get; set; } = "";
+
+    private readonly string _id = "ed" + Guid.NewGuid().ToString("N")[..6];
+    private string _title = "", _text = "", _reason = "";
+    private string? _error;
+    private bool _busy, _preview, _canAttach, _isFirstPost;
+    private MarkupString _previewHtml;
+    private BoardSettings? _settings;
+    private string _accept = "";
+    private List<Smilie> _smilies = new();
+    private readonly List<AttachmentRepository.Upload> _uploads = new();
+    private List<Attachment> _existing = new();
+    private readonly HashSet<long> _remove = new();
+    private Forum? _forum;
+    private ForumThread? _thread;
+    private Post? _post;
+
+    private bool ShowTitle => ForumId > 0 || (EditPostId > 0 && _isFirstPost);
+    private string DraftKey => EditPostId > 0 ? $"e{EditPostId}" : ThreadId > 0 ? $"t{ThreadId}" : $"f{ForumId}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var snap = await Cache.GetAsync();
+        _settings = snap.Settings;
+        _smilies = (await Renderer.SmiliesAsync()).Take(12).ToList();
+        _accept = string.Join(",", snap.Settings.AllowedExtensions.Select(e => "." + e));
+        var user = await Current.GetAsync();
+        var perms = new Permissions(snap);
+
+        if (EditPostId > 0)
+        {
+            _post = await Posts.GetAsync(EditPostId);
+            if (_post != null) _thread = await Threads.GetAsync(_post.ThreadId);
+            if (_thread != null) _forum = snap.Forum(_thread.ForumId);
+            if (_post == null || _thread == null || _forum == null || !perms.CanEditPost(user, _forum, _thread, _post))
+            {
+                _error = "Du darfst diesen Beitrag nicht bearbeiten.";
+                return;
+            }
+            _isFirstPost = _post.PostId == _thread.FirstPostId;
+            _title = _thread.DisplayTitle;
+            _text = HtmlUtil.DecodeNumericEntities(_post.PageText);
+            _existing = (await Attachments.ByPostsAsync(new[] { _post.PostId })).GetValueOrDefault(_post.PostId) ?? new();
+        }
+        else if (ThreadId > 0)
+        {
+            _thread = await Threads.GetAsync(ThreadId);
+            _forum = _thread == null ? null : snap.Forum(_thread.ForumId);
+            if (QuotePostId > 0 && await Posts.GetAsync(QuotePostId) is { } q && q.ThreadId == ThreadId && q.Visible == 1)
+                _text = $"[quote={HtmlUtil.CleanTitle(q.Username)};{q.PostId}]{StripNestedQuotes(HtmlUtil.DecodeNumericEntities(q.PageText))}[/quote]\n";
+        }
+        else if (ForumId > 0)
+        {
+            _forum = snap.Forum(ForumId);
+        }
+        _canAttach = _forum != null && perms.CanPostAttachment(user, _forum);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || EditPostId > 0) return;
+        try
+        {
+            var draft = await JS.InvokeAsync<string?>("vbf.loadDraft", DraftKey);
+            if (!string.IsNullOrEmpty(draft) && draft.Length > _text.Length)
+            {
+                _text = draft;
+                StateHasChanged();
+            }
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private static string StripNestedQuotes(string s) =>
+        System.Text.RegularExpressions.Regex.Replace(s, @"\[quote[^\]]*\].*?\[/quote\]\s*", "", System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+
+    private async Task SaveDraft()
+    {
+        if (EditPostId > 0) return;
+        try { await JS.InvokeVoidAsync("vbf.saveDraft", DraftKey, _text); } catch (JSDisconnectedException) { }
+    }
+
+    private async Task Wrap(string open, string close)
+    {
+        if (_preview) return;
+        var v = await JS.InvokeAsync<string?>("vbf.wrap", $"{_id}-text", open, close);
+        if (v != null) { _text = v; await SaveDraft(); }
+    }
+
+    private async Task Insert(string text)
+    {
+        if (_preview) return;
+        var v = await JS.InvokeAsync<string?>("vbf.insert", $"{_id}-text", " " + text + " ");
+        if (v != null) { _text = v; await SaveDraft(); }
+    }
+
+    private async Task TogglePreview()
+    {
+        _preview = !_preview;
+        if (_preview) _previewHtml = Renderer.Render(_text, await Renderer.ContextAsync(_forum));
+    }
+
+    private void ToggleRemove(long id) { if (!_remove.Remove(id)) _remove.Add(id); }
+
+    private async Task OnFiles(InputFileChangeEventArgs e)
+    {
+        _error = null;
+        var s = _settings!;
+        long max = s.MaxAttachmentKb * 1024L;
+        foreach (var f in e.GetMultipleFiles(20))
+        {
+            if (_uploads.Count + _existing.Count - _remove.Count >= s.MaxAttachmentsPerPost) { _error = $"Maximal {s.MaxAttachmentsPerPost} Anhänge pro Beitrag."; break; }
+            var ext = Path.GetExtension(f.Name).TrimStart('.').ToLowerInvariant();
+            if (!s.AllowedExtensions.Contains(ext)) { _error = $"Dateityp .{ext} ist nicht erlaubt."; continue; }
+            if (f.Size > max) { _error = $"{f.Name} ist zu groß (max. {HtmlUtil.FormatBytes(max)})."; continue; }
+            using var ms = new MemoryStream();
+            await f.OpenReadStream(max).CopyToAsync(ms);
+            var data = ms.ToArray();
+            if (Attachment.ImageExtensions.Contains(ext) && ImageService.Inspect(data) == null) { _error = $"{f.Name} ist kein gültiges Bild."; continue; }
+            _uploads.Add(new AttachmentRepository.Upload(Path.GetFileName(f.Name), data));
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            var user = await Current.GetAsync();
+            PostResult r;
+            if (EditPostId > 0 && _post != null && _thread != null)
+                r = await Posting.EditAsync(user, _post, _thread, ShowTitle ? _title : null, _text, _reason, _uploads, _remove);
+            else if (ThreadId > 0 && _thread != null)
+                r = await Posting.ReplyAsync(user, _thread, _text, _uploads, Ip);
+            else if (ForumId > 0 && _forum != null)
+                r = await Posting.CreateThreadAsync(user, _forum, _title, _text, _uploads, Ip);
+            else r = PostResult.Fail("Ziel nicht gefunden.");
+
+            if (!r.Ok) { _error = r.Error; return; }
+            try { await JS.InvokeVoidAsync("vbf.clearDraft", DraftKey); } catch (JSDisconnectedException) { }
+            if (r.Moderated)
+                Nav.NavigateTo(ForumId > 0 ? $"/forum/{ForumId}?moderated=1" : $"/thread/{r.ThreadId}?moderated=1", forceLoad: true);
+            else
+                Nav.NavigateTo($"/post/{r.PostId}", forceLoad: true);
+        }
+        catch (Exception)
+        {
+            _error = "Beim Speichern ist ein Fehler aufgetreten. Dein Text ist noch da – bitte versuche es erneut.";
+        }
+        finally { _busy = false; }
+    }
+
+    public void Dispose() { }
+}

@@ -1,0 +1,15 @@
+<form method="post" action="/mod/thread/@ThreadId" class="inline">
+    <AntiforgeryToken />
+    <input type="hidden" name="action" value="@Action" />
+    @if (!string.IsNullOrEmpty(Return)) { <input type="hidden" name="returnUrl" value="@Return" /> }
+    <button type="submit" class="btn btn-sm @(Danger ? "btn-danger" : "")" data-confirm="@Confirm">@Label</button>
+</form>
+
+@code {
+    [Parameter] public long ThreadId { get; set; }
+    [Parameter] public string Action { get; set; } = "";
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public bool Danger { get; set; }
+    [Parameter] public string? Confirm { get; set; }
+    [Parameter] public string? Return { get; set; }
+}

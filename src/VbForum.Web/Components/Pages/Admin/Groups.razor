@@ -1,0 +1,132 @@
+@page "/admin/groups"
+@attribute [Authorize(Policy = "Admin")]
+@rendermode InteractiveServer
+@inject BoardCache Cache
+@inject ForumAdminService Admin
+@inject CurrentUser Current
+@inject TokenRepository Audit
+
+<PageTitle>Benutzergruppen – Administration</PageTitle>
+
+<main class="page container">
+    <AdminShell Active="groups" Title="Benutzergruppen" Subtitle="Gruppen und ihre Standardrechte (gelten, wenn ein Forum keine eigenen Rechte hat)">
+        <Actions><button type="button" class="btn btn-primary" @onclick="New"><Icon Name="plus" />Neue Gruppe</button></Actions>
+        <ChildContent>
+            @if (_msg != null) { <div class="alert alert-ok" role="status">@_msg</div> }
+            @if (_err != null) { <div class="alert alert-err" role="alert">@_err</div> }
+            <section class="card">
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead><tr><th>#</th><th>Gruppe</th><th>Benutzertitel</th><th class="num">Mitglieder</th><th>Rolle</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var g in _snap?.Groups.Values.OrderBy(x => x.UserGroupId) ?? Enumerable.Empty<UserGroup>())
+                            {
+                                <tr>
+                                    <td class="muted">@g.UserGroupId</td>
+                                    <td><strong>@g.DisplayTitle</strong>@if (!string.IsNullOrEmpty(g.Description)) { <div class="small muted">@HtmlUtil.CleanTitle(g.Description)</div> }</td>
+                                    <td class="small">@HtmlUtil.CleanTitle(g.UserTitle)</td>
+                                    <td class="num"><a href="/admin/users?group=@g.UserGroupId">@ForumTime.Number(_counts.GetValueOrDefault(g.UserGroupId))</a></td>
+                                    <td>@Role(g.UserGroupId)</td>
+                                    <td class="nowrap">
+                                        <button type="button" class="btn btn-sm" @onclick="() => Edit(g)">Bearbeiten</button>
+                                        @if (g.UserGroupId > 8) { <button type="button" class="btn btn-sm btn-ghost btn-danger" @onclick="() => Delete(g)" title="Löschen"><Icon Name="trash" Size="16" /></button> }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            <p class="small muted">Welche Gruppen Administratoren, Super-Moderatoren und Gesperrte sind, legst du unter <a href="/admin/settings">Einstellungen</a> fest. Forenbezogene Rechte unter <a href="/admin/forums">Foren &amp; Rechte</a>.</p>
+        </ChildContent>
+    </AdminShell>
+</main>
+
+@if (_edit != null)
+{
+    <div class="modal-back" @onclick="() => _edit = null">
+        <div class="modal" role="dialog" aria-modal="true" @onclick:stopPropagation>
+            <h2 class="card-title">@(_edit.UserGroupId > 0 ? "Gruppe bearbeiten" : "Neue Gruppe")</h2>
+            <div class="form-grid">
+                <div class="field"><label for="g-t">Name</label><input id="g-t" @bind="_edit.Title" maxlength="100" /></div>
+                <div class="field"><label for="g-ut">Benutzertitel</label><input id="g-ut" @bind="_edit.UserTitle" maxlength="100" /></div>
+                <div class="field"><label for="g-pm">PN-Postfach (0 = unbegrenzt)</label><input id="g-pm" type="number" @bind="_edit.PmQuota" /></div>
+            </div>
+            <div class="field"><label for="g-d">Beschreibung</label><input id="g-d" @bind="_edit.Description" maxlength="250" /></div>
+            <div class="field">
+                <span class="label">Standardrechte in Foren</span>
+                <div class="stack" style="gap:0">
+                    @foreach (var (perm, label) in Perms)
+                    {
+                        var bit = _snap!.Bits.Perm(perm);
+                        <label class="toggle-row">@label<input type="checkbox" checked="@((_edit.ForumPermissions & bit) != 0)" @onchange="() => _edit.ForumPermissions ^= bit" /></label>
+                    }
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn" @onclick="() => _edit = null">Abbrechen</button>
+                <button type="button" class="btn btn-primary" @onclick="Save">Speichern</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly (ForumPerm, string)[] Perms =
+    {
+        (ForumPerm.CanView, "Foren sehen"), (ForumPerm.CanViewThreads, "Themen lesen"), (ForumPerm.CanViewOthers, "Themen anderer sehen"),
+        (ForumPerm.CanSearch, "Suche verwenden"), (ForumPerm.CanPostNew, "Themen erstellen"), (ForumPerm.CanReplyOwn, "Auf eigene Themen antworten"),
+        (ForumPerm.CanReplyOthers, "Auf Themen anderer antworten"), (ForumPerm.CanEditPost, "Eigene Beiträge bearbeiten"),
+        (ForumPerm.CanDeletePost, "Eigene Beiträge löschen"), (ForumPerm.CanDeleteThread, "Eigene Themen löschen"),
+        (ForumPerm.CanGetAttachment, "Anhänge ansehen"), (ForumPerm.CanPostAttachment, "Anhänge hochladen"),
+    };
+
+    private BoardSnapshot? _snap;
+    private Dictionary<int, long> _counts = new();
+    private UserGroup? _edit;
+    private string? _msg, _err;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _snap = await Cache.GetAsync();
+        _counts = await Admin.GroupMemberCountsAsync();
+    }
+
+    private string Role(int id)
+    {
+        var s = _snap!.Settings;
+        return s.AdminGroups.Contains(id) ? "Administrator" : s.SuperModGroups.Contains(id) ? "Super-Moderator" :
+            s.BannedGroups.Contains(id) ? "Gesperrt" : id == s.GuestGroupId ? "Gäste" : id == s.RegisteredGroupId ? "Neue Mitglieder" :
+            id == s.AwaitingEmailGroupId ? "E-Mail unbestätigt" : "";
+    }
+
+    private void New() => _edit = new UserGroup { ForumPermissions = _snap!.Groups.GetValueOrDefault(_snap.Settings.RegisteredGroupId)?.ForumPermissions ?? 0 };
+
+    private void Edit(UserGroup g) => _edit = new UserGroup
+    {
+        UserGroupId = g.UserGroupId, Title = HtmlUtil.CleanTitle(g.Title), Description = HtmlUtil.CleanTitle(g.Description), UserTitle = HtmlUtil.CleanTitle(g.UserTitle),
+        OpenTag = g.OpenTag, CloseTag = g.CloseTag, PmQuota = g.PmQuota, ForumPermissions = g.ForumPermissions, AttachLimit = g.AttachLimit
+    };
+
+    private async Task Save()
+    {
+        _err = null;
+        if (string.IsNullOrWhiteSpace(_edit!.Title)) { _err = "Bitte einen Namen eingeben."; return; }
+        await Admin.SaveGroupAsync(_edit);
+        await Audit.LogAsync(await Current.GetAsync(), _edit.UserGroupId > 0 ? "group.edit" : "group.create", $"{_edit.UserGroupId} {_edit.Title}", "");
+        _msg = $"Gruppe „{_edit.Title}“ gespeichert.";
+        _edit = null;
+        await LoadAsync();
+    }
+
+    private async Task Delete(UserGroup g)
+    {
+        var err = await Admin.DeleteGroupAsync(g.UserGroupId);
+        if (err != null) { _err = err; _msg = null; return; }
+        await Audit.LogAsync(await Current.GetAsync(), "group.delete", $"{g.UserGroupId} {g.DisplayTitle}", "");
+        _msg = $"Gruppe „{g.DisplayTitle}“ gelöscht."; _err = null;
+        await LoadAsync();
+    }
+}

@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/VbForum.Core/VbForum.Core.csproj" />
+    <Project Path="src/VbForum.Data/VbForum.Data.csproj" />
+    <Project Path="src/VbForum.Web/VbForum.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/VbForum.Tests/VbForum.Tests.csproj" />
+  </Folder>
+</Solution>

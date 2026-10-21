@@ -1,0 +1,204 @@
+@page "/admin/database"
+@attribute [Authorize(Policy = "Admin")]
+@rendermode InteractiveServer
+@implements IDisposable
+@inject DbSettingsStore Store
+@inject Schema Schema
+@inject BoardCache Cache
+@inject MaintenanceJobs Jobs
+@inject SearchService Search
+@inject CurrentUser Current
+@inject TokenRepository Audit
+@inject ForumPaths Paths
+
+<PageTitle>Datenbank – Administration</PageTitle>
+
+<main class="page container">
+    <AdminShell Active="db" Title="Datenbank &amp; Wartung" Subtitle="Verbindung, Tabellen und Wartungsaufgaben">
+        @if (_msg != null) { <div class="alert alert-ok" role="status">@_msg</div> }
+        @if (_err != null) { <div class="alert alert-err" role="alert" style="white-space:pre-line">@_err</div> }
+
+        <section class="card card-pad stack">
+            <h2 class="card-title">Verbindung</h2>
+            <div class="form-grid">
+                <div class="field"><label for="db-host">Server</label><input id="db-host" @bind="_s.Server" /></div>
+                <div class="field"><label for="db-port">Port</label><input id="db-port" type="number" @bind="_s.Port" /></div>
+                <div class="field"><label for="db-name">Datenbank</label><input id="db-name" @bind="_s.Database" /></div>
+                <div class="field"><label for="db-prefix">Tabellen-Präfix</label><input id="db-prefix" @bind="_s.TablePrefix" /></div>
+                <div class="field"><label for="db-user">Benutzer</label><input id="db-user" @bind="_s.User" autocomplete="off" /></div>
+                <div class="field"><label for="db-pw">Passwort</label><input id="db-pw" type="password" @bind="_s.Password" autocomplete="new-password" placeholder="(unverändert)" /></div>
+            </div>
+            <label class="check"><input type="checkbox" @bind="_s.UseSsl" />SSL-Verbindung erzwingen</label>
+            <div class="form-actions">
+                <button type="button" class="btn" @onclick="Test" disabled="@_busy">Verbindung testen</button>
+                <button type="button" class="btn btn-primary" @onclick="Save" disabled="@_busy">Speichern</button>
+            </div>
+            <span class="hint">Die Verbindung wird in <code>App_Data/dbsettings.json</code> gespeichert (nur für den Server-Benutzer lesbar). Änderungen wirken sofort.</span>
+        </section>
+
+        <section class="card card-pad stack">
+            <h2 class="card-title">Wartung</h2>
+            @if (Jobs.Running != null)
+            {
+                <div class="alert alert-info row" style="justify-content:space-between">
+                    <span><strong>@Jobs.Running</strong> läuft: @Jobs.Status</span>
+                    <button type="button" class="btn btn-sm" @onclick="Jobs.Cancel">Abbrechen</button>
+                </div>
+            }
+            else if (Jobs.Finished != null)
+            {
+                <div class="alert alert-ok">Letzte Aufgabe (@Jobs.Finished?.ToString("HH:mm")): @Jobs.Status</div>
+            }
+            <div class="table-wrap">
+                <table class="table">
+                    <tbody>
+                        <tr>
+                            <td><strong>Volltextindex für die Suche</strong><div class="small muted">@(_fulltext ? "Ist vorhanden – die Suche nutzt ihn." : "Fehlt. Legt FULLTEXT-Indizes auf vb_post.pagetext und vb_thread.title an. Dauert bei 655k Beiträgen einige Minuten; die Tabelle ist währenddessen gesperrt (am besten nachts).")</div></td>
+                            <td class="num"><button type="button" class="btn btn-sm" disabled="@(_fulltext || Jobs.Running != null)" @onclick="StartFulltext">Anlegen</button></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Foren-Zähler neu berechnen</strong><div class="small muted">Themen, Beiträge und letzter Beitrag je Forum.</div></td>
+                            <td class="num"><button type="button" class="btn btn-sm" disabled="@(Jobs.Running != null)" @onclick="StartForums">Starten</button></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Themen-Zähler neu berechnen</strong><div class="small muted">Antworten, versteckte/gelöschte und letzter Beitrag aller Themen. Dauert länger.</div></td>
+                            <td class="num"><button type="button" class="btn btn-sm" disabled="@(Jobs.Running != null)" @onclick="StartThreads">Starten</button></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Beitragszähler der Benutzer</strong><div class="small muted">Zählt alle sichtbaren Beiträge je Benutzer neu (nur Foren mit „Beiträge zählen“).</div></td>
+                            <td class="num"><button type="button" class="btn btn-sm" disabled="@(Jobs.Running != null)" @onclick="StartUsers">Starten</button></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Cache leeren</strong><div class="small muted">Foren, Gruppen und Einstellungen neu laden; Bild-Proxy-Cache (@HtmlUtil.FormatBytes(_imgCache)) löschen.</div></td>
+                            <td class="num"><button type="button" class="btn btn-sm" @onclick="ClearCache">Leeren</button></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card-head"><h2>Tabellen</h2><span class="small muted">@(_snap?.Bits.LoadedFromDatastore == true ? "Bitfelder aus vb_datastore" : "Bitfelder: vB-4-Standard")</span></div>
+            <div class="table-wrap">
+                <table class="table">
+                    <thead><tr><th>Tabelle</th><th>Engine</th><th>Zeichensatz</th><th class="num">Zeilen (ca.)</th><th class="num">Daten</th><th class="num">Index</th></tr></thead>
+                    <tbody>
+                        @foreach (var t in _tables)
+                        {
+                            <tr><td>@t.Name</td><td>@t.Engine</td><td>@t.Collation</td><td class="num">@ForumTime.Number(t.Rows)</td><td class="num">@HtmlUtil.FormatBytes(t.DataBytes)</td><td class="num">@HtmlUtil.FormatBytes(t.IndexBytes)</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </AdminShell>
+</main>
+
+@code {
+    private DbSettings _s = new();
+    private List<Schema.TableInfo> _tables = new();
+    private BoardSnapshot? _snap;
+    private bool _fulltext, _busy;
+    private long _imgCache;
+    private string? _msg, _err;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var c = Store.Current;
+        _s = new DbSettings { Server = c.Server, Port = c.Port, Database = c.Database, User = c.User, TablePrefix = c.TablePrefix, UseSsl = c.UseSsl };
+        Jobs.Changed += OnJobChanged;
+        await LoadInfoAsync();
+    }
+
+    private async Task LoadInfoAsync()
+    {
+        try
+        {
+            _snap = await Cache.GetAsync();
+            _tables = await Schema.TablesAsync();
+            _fulltext = await Schema.HasPostFulltextAsync() && await Schema.HasThreadFulltextAsync();
+            _imgCache = Directory.Exists(Paths.ImageCache) ? Directory.GetFiles(Paths.ImageCache).Sum(f => new FileInfo(f).Length) : 0;
+        }
+        catch (Exception ex) { _err = ex.Message; }
+    }
+
+    private void OnJobChanged() => InvokeAsync(async () =>
+    {
+        if (Jobs.Running == null) { Search.ResetFulltextCache(); await LoadInfoAsync(); }
+        StateHasChanged();
+    });
+
+    private DbSettings Effective() => new()
+    {
+        Server = _s.Server.Trim(), Port = _s.Port, Database = _s.Database.Trim(), User = _s.User.Trim(), TablePrefix = _s.TablePrefix.Trim(),
+        UseSsl = _s.UseSsl, Password = string.IsNullOrEmpty(_s.Password) ? Store.Current.Password : _s.Password
+    };
+
+    private async Task Test()
+    {
+        _busy = true; _msg = _err = null;
+        var r = await Db.TestAsync(Effective());
+        if (r.Ok) _msg = r.Message; else _err = r.Message;
+        _busy = false;
+    }
+
+    private async Task Save()
+    {
+        _busy = true; _msg = _err = null;
+        var s = Effective();
+        var r = await Db.TestAsync(s);
+        if (!r.Ok) { _err = "Nicht gespeichert – Verbindung fehlgeschlagen:\n" + r.Message; _busy = false; return; }
+        Store.Save(s);
+        await Schema.EnsureOwnTablesAsync();
+        Cache.Invalidate();
+        await Audit.LogAsync(await Current.GetAsync(), "database.save", $"{s.User}@{s.Server}/{s.Database}", "");
+        _msg = "Verbindung gespeichert. " + r.Message;
+        await LoadInfoAsync();
+        _busy = false;
+    }
+
+    private async Task Start(string name, Func<IServiceProvider, IProgress<string>, CancellationToken, Task> job)
+    {
+        _msg = _err = null;
+        if (!Jobs.Start(name, job)) _err = "Es läuft bereits eine Wartungsaufgabe.";
+        else await Audit.LogAsync(await Current.GetAsync(), "maintenance", name, "");
+    }
+
+    private Task StartFulltext() => Start("Volltextindex", async (sp, p, ct) =>
+    {
+        p.Report("Index wird angelegt … (das kann einige Minuten dauern)");
+        await sp.GetRequiredService<Schema>().CreateFulltextAsync();
+    });
+
+    private Task StartForums() => Start("Foren-Zähler", async (sp, p, ct) =>
+    {
+        var n = await sp.GetRequiredService<Counters>().RebuildAllForumsAsync(ct);
+        sp.GetRequiredService<BoardCache>().Invalidate();
+        p.Report($"{n} Foren neu berechnet.");
+    });
+
+    private Task StartThreads() => Start("Themen-Zähler", async (sp, p, ct) =>
+    {
+        await sp.GetRequiredService<Counters>().RebuildAllThreadsAsync(p, ct);
+        await sp.GetRequiredService<Counters>().RebuildAllForumsAsync(ct);
+        sp.GetRequiredService<BoardCache>().Invalidate();
+    });
+
+    private Task StartUsers() => Start("Benutzer-Beitragszähler", async (sp, p, ct) =>
+    {
+        var snap = await sp.GetRequiredService<BoardCache>().GetAsync();
+        p.Report("Zähle Beiträge … (einige Minuten)");
+        await sp.GetRequiredService<Counters>().RebuildAllUserPostsAsync(MaintenanceJobs.CountingForums(snap), ct);
+    });
+
+    private async Task ClearCache()
+    {
+        Cache.Invalidate();
+        Search.ResetFulltextCache();
+        if (Directory.Exists(Paths.ImageCache)) foreach (var f in Directory.GetFiles(Paths.ImageCache)) try { File.Delete(f); } catch { }
+        _msg = "Cache geleert.";
+        await LoadInfoAsync();
+    }
+
+    public void Dispose() => Jobs.Changed -= OnJobChanged;
+}

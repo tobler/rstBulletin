@@ -1,0 +1,133 @@
+@page "/setup"
+@layout SetupLayout
+@inject DbSettingsStore Store
+@inject SetupToken SetupCode
+@inject Schema Schema
+@inject BoardCache Cache
+@inject NavigationManager Nav
+@inject IServiceProvider Services
+
+<PageTitle>Einrichtung</PageTitle>
+
+<main class="page container" style="align-items:center">
+    <div class="stack" style="width:min(560px,100%)">
+        <div class="page-head"><div><h1>Einrichtung</h1><p>Verbindung zur bestehenden vBulletin-Datenbank herstellen.</p></div></div>
+
+        @if (_blocked)
+        {
+            <div class="card card-pad stack" style="gap:10px">
+                <p style="margin:0">Die Datenbank ist bereits eingerichtet. Änderungen nimmst du im Admin-Bereich unter <a href="/admin/database">Datenbank</a> vor.</p>
+                <p style="margin:0"><a class="btn" href="/">Zum Forum</a></p>
+            </div>
+        }
+        else
+        {
+            <EditForm Model="Input" FormName="setup" OnSubmit="SubmitAsync" class="card card-pad stack" Enhance>
+                @if (_error != null) { <div class="alert alert-err" role="alert" style="white-space:pre-line">@_error</div> }
+                @if (_ok != null) { <div class="alert alert-ok" role="status">@_ok</div> }
+                @if (_needsCode)
+                {
+                    <div class="field">
+                        <label for="s-code">Einrichtungs-Code</label>
+                        <InputText id="s-code" @bind-Value="Input!.Code" autocomplete="off" />
+                        <span class="hint">Steht beim Start der Anwendung im Log („Einrichtungs-Code“). Schützt die Einrichtung vor Fremden.</span>
+                    </div>
+                }
+                <div class="form-grid">
+                    <div class="field"><label for="s-host">Server</label><InputText id="s-host" @bind-Value="Input!.Server" /></div>
+                    <div class="field"><label for="s-port">Port</label><InputNumber id="s-port" @bind-Value="Input.Port" /></div>
+                    <div class="field"><label for="s-db">Datenbank</label><InputText id="s-db" @bind-Value="Input.Database" /></div>
+                    <div class="field"><label for="s-prefix">Tabellen-Präfix</label><InputText id="s-prefix" @bind-Value="Input.TablePrefix" /><span class="hint">Meist „vb_“ – steht in der vB-config.php.</span></div>
+                    <div class="field"><label for="s-user">Benutzer</label><InputText id="s-user" @bind-Value="Input.User" autocomplete="off" /></div>
+                    <div class="field"><label for="s-pw">Passwort</label><InputText id="s-pw" type="password" @bind-Value="Input.Password" autocomplete="new-password" /></div>
+                </div>
+                <label class="check"><InputCheckbox @bind-Value="Input.UseSsl" />SSL-Verbindung erzwingen</label>
+                <div class="field">
+                    <label for="s-admin">Board-Name</label>
+                    <InputText id="s-admin" @bind-Value="Input.BoardName" />
+                </div>
+                <div class="alert alert-info small">Es werden <strong>keine</strong> vBulletin-Tabellen verändert. Angelegt werden nur vier eigene Tabellen (vbf_setting, vbf_userauth, vbf_token, vbf_auditlog). Danach meldest du dich mit deinem bestehenden vB-Administratorkonto an.</div>
+                <div class="form-actions">
+                    <button type="submit" name="Input.Action" value="test" class="btn">Verbindung testen</button>
+                    <button type="submit" name="Input.Action" value="save" class="btn btn-primary">Speichern und starten</button>
+                </div>
+            </EditForm>
+        }
+    </div>
+</main>
+
+@code {
+    public sealed class SetupInput
+    {
+        public string Code { get; set; } = "";
+        public string Server { get; set; } = "localhost";
+        public int Port { get; set; } = 3306;
+        public string Database { get; set; } = "";
+        public string User { get; set; } = "";
+        public string Password { get; set; } = "";
+        public string TablePrefix { get; set; } = "vb_";
+        public bool UseSsl { get; set; }
+        public string BoardName { get; set; } = "Forum";
+        public string Action { get; set; } = "";
+    }
+
+    [CascadingParameter] public HttpContext HttpContext { get; set; } = default!;
+    [SupplyParameterFromForm] public SetupInput? Input { get; set; }
+
+    private bool _blocked, _needsCode;
+    private string? _error, _ok;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new SetupInput();
+        // Einrichtung nur, solange keine funktionierende Verbindung existiert (oder die DB nicht erreichbar ist)
+        if (Store.Current.IsConfigured)
+        {
+            var test = await Db.TestAsync(Store.Current);
+            _blocked = test.Ok;
+            if (!_blocked)
+            {
+                _error = "Die gespeicherte Verbindung funktioniert nicht:\n" + test.Message;
+                var s = Store.Current;
+                if (HttpContext.Request.Method == "GET")
+                    Input = new SetupInput { Server = s.Server, Port = s.Port, Database = s.Database, User = s.User, TablePrefix = s.TablePrefix, UseSsl = s.UseSsl };
+            }
+        }
+        // Code ist nötig, wenn er beim Start erzeugt wurde, oder der Zugriff nicht lokal erfolgt
+        if (string.IsNullOrEmpty(SetupCode.Value))
+            SetupCode.Value = VbForum.Core.Security.VbPassword.RandomToken(12);
+        _needsCode = true;
+    }
+
+    private DbSettings ToSettings() => new()
+    {
+        Server = Input!.Server.Trim(), Port = Input.Port, Database = Input.Database.Trim(), User = Input.User.Trim(),
+        Password = Input.Password, TablePrefix = Input.TablePrefix.Trim(), UseSsl = Input.UseSsl
+    };
+
+    private async Task SubmitAsync()
+    {
+        if (_blocked) return;
+        if (!string.Equals(Input!.Code.Trim(), SetupCode.Value, StringComparison.Ordinal))
+        {
+            _error = "Der Einrichtungs-Code ist falsch. Er steht im Log der Anwendung.";
+            Services.GetRequiredService<ILogger<SetupInput>>().LogWarning("Einrichtungs-Code: {Code}", SetupCode.Value);
+            return;
+        }
+        var s = ToSettings();
+        var test = await Db.TestAsync(s);
+        if (!test.Ok) { _error = "Verbindung fehlgeschlagen:\n" + test.Message; _ok = null; return; }
+        _error = null;
+        if (Input.Action != "save") { _ok = test.Message; return; }
+
+        Store.Save(s);
+        await Schema.EnsureOwnTablesAsync();
+        Cache.Invalidate();
+        var settings = (await Cache.GetAsync()).Settings;
+        if (!string.IsNullOrWhiteSpace(Input.BoardName)) settings.BoardName = Input.BoardName.Trim();
+        settings.BaseUrl = $"{HttpContext.Request.Scheme}://{HttpContext.Request.Host}";
+        await Cache.SaveSettingsAsync(settings);
+        SetupCode.Value = null;
+        Nav.NavigateTo("/login?returnUrl=%2Fadmin", forceLoad: true);
+    }
+}

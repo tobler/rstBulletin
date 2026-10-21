@@ -1,0 +1,126 @@
+@page "/account"
+@attribute [Authorize]
+@inject CurrentUser Current
+@inject BoardCache Cache
+@inject UserRepository Users
+@inject PostRenderer Renderer
+
+<PageTitle>Mein Profil</PageTitle>
+
+@if (!_loaded) { return; }
+<main class="page container">
+    <AccountShell User="_user!" Active="profil">
+        @if (_message != null) { <div class="alert alert-ok" role="status">@_message</div> }
+        @if (_error != null) { <div class="alert alert-err" role="alert">@_error</div> }
+
+        <section class="card card-pad stack">
+            <div><h2 class="card-title">Profilbild</h2><p class="muted small" style="margin:0">Wird quadratisch zugeschnitten und auf 200 × 200 Pixel verkleinert.</p></div>
+            <div class="row" style="gap:16px">
+                <Avatar UserId="_user!.UserId" Name="@_user.Username" HasAvatar="_user.HasAvatar" Revision="_user.AvatarRevision" Size="72" />
+                <form method="post" action="/account/avatar" enctype="multipart/form-data" class="row">
+                    <AntiforgeryToken />
+                    <label class="file-drop"><Icon Name="image" />Bild auswählen<input type="file" name="file" accept="image/*" onchange="this.form.submit()" /></label>
+                    <noscript><button type="submit" class="btn">Hochladen</button></noscript>
+                </form>
+                @if (_user.HasAvatar)
+                {
+                    <form method="post" action="/account/avatar" enctype="multipart/form-data">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="remove" value="1" />
+                        <button type="submit" class="btn btn-ghost">Entfernen</button>
+                    </form>
+                }
+            </div>
+        </section>
+
+        <EditForm Model="Input" FormName="profile" OnSubmit="SaveAsync" class="card card-pad stack" Enhance>
+            <div><h2 class="card-title">Profil</h2><p class="muted small" style="margin:0">Diese Angaben sind für andere Mitglieder sichtbar.</p></div>
+            <div class="form-grid">
+                <div class="field">
+                    <label for="p-name">Benutzername</label>
+                    <input id="p-name" value="@_user.Username" disabled />
+                    <span class="hint">Kann nur die Administration ändern.</span>
+                </div>
+                <div class="field">
+                    <label for="p-web">Website</label>
+                    <InputText id="p-web" type="url" @bind-Value="Input!.Homepage" placeholder="https://" />
+                </div>
+                @foreach (var (key, title) in _snap!.ProfileFields)
+                {
+                    <div class="field">
+                        <label for="p-@key">@title</label>
+                        <input id="p-@key" name="Input.Fields[@key]" value="@Input.Fields.GetValueOrDefault(key)" maxlength="250" />
+                    </div>
+                }
+            </div>
+            <div class="field">
+                <label for="p-sig">Signatur</label>
+                <InputTextArea id="p-sig" @bind-Value="Input.Signature" rows="3" maxlength="1000" />
+                <span class="hint">BBCode erlaubt, max. 1.000 Zeichen. Erscheint unter deinen Beiträgen.</span>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(Input.Signature))
+            {
+                <div class="preview-box"><div class="small muted" style="margin-bottom:6px">Vorschau Signatur</div><div class="post-body" style="font-size:14px">@_sigPreview</div></div>
+            }
+            <div class="form-actions"><button type="submit" class="btn btn-primary">Profil speichern</button></div>
+        </EditForm>
+    </AccountShell>
+</main>
+
+@code {
+    public sealed class ProfileInput
+    {
+        public string? Homepage { get; set; }
+        public string? Signature { get; set; }
+        public Dictionary<string, string> Fields { get; set; } = new();
+    }
+
+    [SupplyParameterFromForm] public ProfileInput? Input { get; set; }
+    [SupplyParameterFromQuery] public string? Msg { get; set; }
+    [SupplyParameterFromQuery] public string? Err { get; set; }
+
+    private bool _loaded;
+    private ForumUser? _user;
+    private BoardSnapshot? _snap;
+    private string? _message, _error;
+    private MarkupString _sigPreview;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _snap = await Cache.GetAsync();
+            _user = await Current.GetAsync();
+            if (Input == null)
+            {
+                var row = await Users.GetAsync(_user.UserId);
+                Input = new ProfileInput
+                {
+                    Homepage = row?.Homepage,
+                    Signature = HtmlUtil.DecodeNumericEntities(await Users.SignatureAsync(_user.UserId)),
+                    Fields = await Users.ProfileFieldsAsync(_user.UserId, _snap.ProfileFields.Keys)
+                };
+            }
+            _message = Msg switch { "avatar-saved" => "Profilbild gespeichert.", "avatar-removed" => "Profilbild entfernt.", _ => null };
+            _error = Err switch
+            {
+                "avatar-size" => "Das Bild ist zu groß.", "avatar-type" => "Die Datei ist kein unterstütztes Bild (JPG, PNG, GIF, WebP).",
+                "avatar-empty" => "Bitte wähle ein Bild aus.", _ => null
+            };
+            _sigPreview = await Renderer.RenderSignatureAsync(Input.Signature);
+        }
+        finally { _loaded = true; }
+    }
+
+    private async Task SaveAsync()
+    {
+        var homepage = (Input!.Homepage ?? "").Trim();
+        if (homepage.Length > 0 && VbForum.Core.BbCode.BbCodeRenderer.SafeUrl(homepage) == null) { _error = "Die Website-Adresse ist ungültig."; return; }
+        var sig = (Input.Signature ?? "").Trim();
+        if (sig.Length > 1000) { _error = "Die Signatur ist zu lang."; return; }
+        var fields = Input.Fields.Where(f => _snap!.ProfileFields.ContainsKey(f.Key)).ToDictionary(f => f.Key, f => (f.Value ?? "").Trim()[..Math.Min((f.Value ?? "").Trim().Length, 250)]);
+        await Users.SaveProfileAsync(_user!.UserId, homepage, sig, fields);
+        _sigPreview = await Renderer.RenderSignatureAsync(sig);
+        _message = "Profil gespeichert.";
+    }
+}

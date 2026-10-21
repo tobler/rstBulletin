@@ -1,0 +1,163 @@
+@page "/admin/forums/{Id:int}/permissions"
+@attribute [Authorize(Policy = "Admin")]
+@rendermode InteractiveServer
+@inject BoardCache Cache
+@inject ForumAdminService Admin
+@inject UserRepository Users
+@inject CurrentUser Current
+@inject TokenRepository Audit
+
+<PageTitle>Rechte – Administration</PageTitle>
+
+<main class="page container">
+    <AdminShell Active="forums" Title="@($"Rechte: {_forum?.DisplayTitle}")" Subtitle="Welche Gruppe darf was in diesem Forum (und allen Unterforen ohne eigene Rechte)?">
+        @if (_forum == null) { <div class="card empty">Forum nicht gefunden.</div> }
+        else
+        {
+            <nav class="breadcrumb"><a href="/admin/forums">Foren</a>@foreach (var b in _snap!.Breadcrumb(_forum)) { <span aria-hidden="true">›</span><span>@b.DisplayTitle</span> }</nav>
+            @if (_msg != null) { <div class="alert alert-ok" role="status">@_msg</div> }
+
+            <section class="card">
+                <div class="table-wrap">
+                    <table class="table perm-grid">
+                        <thead>
+                            <tr>
+                                <th>Gruppe</th>
+                                @foreach (var (perm, label) in Columns) { <th title="@label" style="white-space:normal;min-width:70px;font-size:11px">@label</th> }
+                                <th>Herkunft</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var g in _snap.Groups.Values.OrderBy(x => x.UserGroupId))
+                            {
+                                var custom = _snap.ForumPermissions.ContainsKey((_forum.ForumId, g.UserGroupId));
+                                var editing = _editing.TryGetValue(g.UserGroupId, out var ev);
+                                var value = editing ? ev : _perms!.GroupForumPerms(g.UserGroupId, _forum);
+                                var src = _perms!.InheritedFrom(g.UserGroupId, _forum);
+                                <tr class="@(editing ? "sel" : "")">
+                                    <td><strong>@g.DisplayTitle</strong><div class="small muted">#@g.UserGroupId</div></td>
+                                    @foreach (var (perm, label) in Columns)
+                                    {
+                                        var bit = _snap.Bits.Perm(perm);
+                                        var on = (value & bit) != 0;
+                                        <td>
+                                            @if (editing)
+                                            {
+                                                <button type="button" class="perm-cell @(on ? "yes" : "no")" aria-pressed="@on" aria-label="@label für @g.DisplayTitle" @onclick="() => Toggle(g.UserGroupId, bit)">@(on ? "✓" : "–")</button>
+                                            }
+                                            else
+                                            {
+                                                <span class="perm-cell @(on ? "yes" : "no") @(custom ? "" : "inh")" aria-label="@(on ? "ja" : "nein")">@(on ? "✓" : "–")</span>
+                                            }
+                                        </td>
+                                    }
+                                    <td class="small muted nowrap">@(src == _forum.ForumId ? "dieses Forum" : src > 0 ? $"geerbt von {_snap.Forum(src)?.DisplayTitle}" : "Gruppenstandard")</td>
+                                    <td class="nowrap">
+                                        @if (editing)
+                                        {
+                                            <button type="button" class="btn btn-sm btn-primary" @onclick="() => Save(g)">Speichern</button>
+                                            <button type="button" class="btn btn-sm" @onclick="() => _editing.Remove(g.UserGroupId)">Abbrechen</button>
+                                        }
+                                        else
+                                        {
+                                            <button type="button" class="btn btn-sm" @onclick="() => _editing[g.UserGroupId] = value">Anpassen</button>
+                                            @if (custom) { <button type="button" class="btn btn-sm btn-ghost" title="Eigene Rechte entfernen – dann wird wieder geerbt" @onclick="() => Reset(g)">Erben</button> }
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="list-foot"><span>Blasse Werte sind geerbt. „Anpassen“ legt eigene Rechte für dieses Forum an. Administratoren dürfen immer alles.</span></div>
+            </section>
+
+            <section class="card card-pad stack">
+                <h2 class="card-title">Moderatoren dieses Forums</h2>
+                <p class="small muted" style="margin:0">Moderatoren dürfen hier (und in allen Unterforen) Beiträge freischalten, bearbeiten, löschen sowie Themen schließen, anpinnen und verschieben.</p>
+                @foreach (var m in _snap.Moderators.Where(x => _forum.ParentIds.Contains(x.ForumId)))
+                {
+                    <div class="row" style="justify-content:space-between;border-bottom:1px solid var(--border-soft);padding:6px 0">
+                        <span><a href="/admin/users/@m.UserId">@HtmlUtil.CleanTitle(m.Username)</a>
+                            @if (m.ForumId != _forum.ForumId) { <span class="small muted"> · geerbt von @_snap.Forum(m.ForumId)?.DisplayTitle</span> }</span>
+                        @if (m.ForumId == _forum.ForumId) { <button type="button" class="btn btn-sm btn-ghost btn-danger" @onclick="() => RemoveMod(m)">Entfernen</button> }
+                    </div>
+                }
+                <div class="row">
+                    <input class="input" style="flex:1 1 220px" placeholder="Benutzername" @bind="_modName" @bind:event="oninput" list="mod-names" @onkeyup="SuggestMods" aria-label="Moderator hinzufügen" />
+                    <datalist id="mod-names">@foreach (var (_, n) in _suggest) { <option value="@n"></option> }</datalist>
+                    <button type="button" class="btn" @onclick="AddMod">Als Moderator hinzufügen</button>
+                </div>
+                @if (_modErr != null) { <div class="field-error">@_modErr</div> }
+            </section>
+        }
+    </AdminShell>
+</main>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private static readonly (ForumPerm, string)[] Columns =
+    {
+        (ForumPerm.CanView, "Forum sehen"), (ForumPerm.CanViewThreads, "Themen lesen"), (ForumPerm.CanViewOthers, "Themen anderer"),
+        (ForumPerm.CanSearch, "Suchen"), (ForumPerm.CanPostNew, "Themen erstellen"), (ForumPerm.CanReplyOwn, "Eigene beantworten"),
+        (ForumPerm.CanReplyOthers, "Andere beantworten"), (ForumPerm.CanEditPost, "Eigene bearbeiten"), (ForumPerm.CanDeletePost, "Eigene Beiträge löschen"),
+        (ForumPerm.CanDeleteThread, "Eigene Themen löschen"), (ForumPerm.CanGetAttachment, "Anhänge ansehen"), (ForumPerm.CanPostAttachment, "Anhänge hochladen"),
+    };
+
+    private BoardSnapshot? _snap;
+    private Permissions? _perms;
+    private Forum? _forum;
+    private readonly Dictionary<int, long> _editing = new();
+    private string? _msg, _modErr, _modName;
+    private List<(long, string)> _suggest = new();
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _snap = await Cache.GetAsync();
+        _perms = new Permissions(_snap);
+        _forum = _snap.Forum(Id);
+    }
+
+    private void Toggle(int groupId, long bit) => _editing[groupId] ^= bit;
+
+    private async Task Save(UserGroup g)
+    {
+        await Admin.SetForumPermissionAsync(_forum!.ForumId, g.UserGroupId, _editing[g.UserGroupId]);
+        _editing.Remove(g.UserGroupId);
+        await Audit.LogAsync(await Current.GetAsync(), "forum.permissions", $"{_forum.ForumId} Gruppe {g.UserGroupId}", "");
+        _msg = $"Rechte für „{g.DisplayTitle}“ gespeichert.";
+        await LoadAsync();
+    }
+
+    private async Task Reset(UserGroup g)
+    {
+        await Admin.SetForumPermissionAsync(_forum!.ForumId, g.UserGroupId, null);
+        await Audit.LogAsync(await Current.GetAsync(), "forum.permissions.reset", $"{_forum.ForumId} Gruppe {g.UserGroupId}", "");
+        _msg = $"„{g.DisplayTitle}“ erbt jetzt wieder.";
+        await LoadAsync();
+    }
+
+    private async Task SuggestMods() => _suggest = await Users.SearchNamesAsync(_modName ?? "", 8);
+
+    private async Task AddMod()
+    {
+        _modErr = null;
+        var u = await Users.GetByNameAsync(_modName ?? "");
+        if (u == null) { _modErr = "Benutzer nicht gefunden."; return; }
+        await Admin.AddModeratorAsync(u.UserId, _forum!.ForumId);
+        await Audit.LogAsync(await Current.GetAsync(), "moderator.add", $"{u.DisplayName} → {_forum.DisplayTitle}", "");
+        _modName = ""; _msg = $"{u.DisplayName} ist jetzt Moderator.";
+        await LoadAsync();
+    }
+
+    private async Task RemoveMod(ModeratorRow m)
+    {
+        await Admin.RemoveModeratorAsync(m.ModeratorId);
+        await Audit.LogAsync(await Current.GetAsync(), "moderator.remove", $"{HtmlUtil.CleanTitle(m.Username)} ← {_forum!.DisplayTitle}", "");
+        await LoadAsync();
+    }
+}

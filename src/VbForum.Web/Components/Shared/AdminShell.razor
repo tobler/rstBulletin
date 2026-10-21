@@ -1,0 +1,53 @@
+@inject CurrentUser Current
+@inject ModerationService Moderation
+
+<div class="page-head">
+    <div><h1>@Title</h1>@if (!string.IsNullOrEmpty(Subtitle)) { <p>@Subtitle</p> }</div>
+    @Actions
+</div>
+<div class="side-layout">
+    <nav aria-label="Administration" class="side-nav" style="flex-basis:200px">
+        @if (_admin)
+        {
+            <a href="/admin" class="@A("dash")"><Icon Name="bar" />Übersicht</a>
+            <a href="/admin/settings" class="@A("settings")"><Icon Name="settings" />Einstellungen</a>
+            <a href="/admin/database" class="@A("db")"><Icon Name="database" />Datenbank &amp; Wartung</a>
+            <div class="sep"></div>
+            <a href="/admin/forums" class="@A("forums")"><Icon Name="folder" />Foren &amp; Rechte</a>
+            <a href="/admin/users" class="@A("users")"><Icon Name="users" />Benutzer</a>
+            <a href="/admin/groups" class="@A("groups")"><Icon Name="shield" />Benutzergruppen</a>
+            <div class="sep"></div>
+            <a href="/admin/threads" class="@A("threads")"><Icon Name="list" />Themen</a>
+        }
+        <a href="/admin/moderation" class="@A("mod")"><Icon Name="flag" />Moderation @if (_queue > 0) { <span class="count">@_queue</span> }</a>
+        @if (_admin)
+        {
+            <a href="/admin/attachments" class="@A("att")"><Icon Name="paperclip" />Anhänge</a>
+            <a href="/admin/log" class="@A("log")"><Icon Name="clock" />Protokoll</a>
+        }
+        <div class="sep"></div>
+        <a href="/"><Icon Name="home" />Zum Forum</a>
+    </nav>
+    <div class="side-content">
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Active { get; set; } = "";
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool _admin;
+    private long _queue;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _admin = (await Current.GetAsync()).IsAdmin;
+        try { _queue = await Moderation.QueueCountAsync(); } catch { }
+    }
+
+    private string? A(string key) => key == Active ? "active" : null;
+}

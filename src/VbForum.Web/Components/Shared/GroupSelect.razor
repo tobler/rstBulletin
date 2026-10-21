@@ -1,0 +1,19 @@
+<div class="field">
+    <label for="@_id">@Label</label>
+    <select id="@_id" value="@Value" @onchange="Changed">
+        @foreach (var g in Groups)
+        {
+            <option value="@g.UserGroupId">@g.UserGroupId – @g.DisplayTitle</option>
+        }
+    </select>
+</div>
+
+@code {
+    private readonly string _id = "gs" + Guid.NewGuid().ToString("N")[..6];
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public int Value { get; set; }
+    [Parameter] public EventCallback<int> ValueChanged { get; set; }
+    [Parameter] public IReadOnlyList<UserGroup> Groups { get; set; } = Array.Empty<UserGroup>();
+
+    private Task Changed(ChangeEventArgs e) => int.TryParse(e.Value?.ToString(), out var v) ? ValueChanged.InvokeAsync(v) : Task.CompletedTask;
+}

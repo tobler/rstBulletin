@@ -1,0 +1,46 @@
+@{ var t = Thread; var pages = (int)((t.ReplyCount + PostsPerPage) / PostsPerPage); }
+<div class="thread-row @(t.IsSticky ? "sticky" : "") @(t.IsModerated ? "moderated" : "") @(t.IsDeleted ? "deleted" : "")">
+    <div class="thread-main">
+        <Avatar UserId="t.PostUserId" Name="@HtmlUtil.CleanTitle(t.PostUsername)" Size="36" />
+        <div class="stack" style="gap:3px;min-width:0">
+            <div class="thread-title-line">
+                @if (t.IsSticky) { <span class="pill pill-warn">Angepinnt</span> }
+                @if (!t.IsOpen && !t.IsRedirect) { <span class="pill">Geschlossen</span> }
+                @if (t.IsRedirect) { <span class="pill">Verschoben</span> }
+                @if (t.IsModerated) { <span class="pill pill-accent">Wartet auf Freigabe</span> }
+                @if (t.IsDeleted) { <span class="pill pill-danger">Gelöscht</span> }
+                @if (t.IsUnread) { <a href="/thread/@t.ThreadId/unread" title="Zum ersten ungelesenen Beitrag" class="dot" aria-label="Ungelesen – zum ersten neuen Beitrag"></a> }
+                <a href="@(t.IsRedirect ? $"/thread/{t.PollId}" : Links.Thread(t))" class="thread-title @(t.IsUnread ? "unread" : "")">@t.DisplayTitle</a>
+                @if (t.Attach > 0) { <span title="Mit Anhängen" class="muted"><Icon Name="paperclip" Size="15" /></span> }
+            </div>
+            <span class="thread-sub">
+                von @HtmlUtil.CleanTitle(t.PostUsername) · @ForumTime.Relative(t.Dateline)
+                @if (ShowForum && !string.IsNullOrEmpty(t.ForumTitle)) { <text> · in <a href="/forum/@t.ForumId">@HtmlUtil.CleanTitle(t.ForumTitle)</a></text> }
+                @if (pages > 1)
+                {
+                    <span class="mini-pager">
+                        · Seite
+                        @foreach (var p in MiniPages(pages)) { if (p == 0) { <span>…</span> } else { <a href="@Links.Thread(t)?page=@p">@p</a> } }
+                    </span>
+                }
+            </span>
+        </div>
+    </div>
+    @if (!t.IsRedirect)
+    {
+        <div class="thread-counts"><strong>@ForumTime.Number(t.ReplyCount)</strong> Antworten<br />@ForumTime.Number(t.Views) Aufrufe</div>
+        <div class="thread-last">
+            <span style="color:var(--ink);font-weight:500">@HtmlUtil.CleanTitle(t.LastPoster)</span>
+            <a href="/thread/@t.ThreadId/lastpost">@ForumTime.Relative(t.LastPost) →</a>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ForumThread Thread { get; set; } = default!;
+    [Parameter] public int PostsPerPage { get; set; } = 15;
+    [Parameter] public bool ShowForum { get; set; }
+
+    private static IEnumerable<int> MiniPages(int n) =>
+        n <= 5 ? Enumerable.Range(1, n) : new[] { 1, 2, 3, 0, n };
+}

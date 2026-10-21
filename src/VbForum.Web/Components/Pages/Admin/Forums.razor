@@ -1,0 +1,169 @@
+@page "/admin/forums"
+@attribute [Authorize(Policy = "Admin")]
+@rendermode InteractiveServer
+@inject BoardCache Cache
+@inject ForumAdminService Admin
+@inject CurrentUser Current
+@inject TokenRepository Audit
+
+<PageTitle>Foren – Administration</PageTitle>
+
+<main class="page container">
+    <AdminShell Active="forums" Title="Foren &amp; Rechte" Subtitle="Struktur, Reihenfolge, Optionen und Berechtigungen">
+        <Actions>
+            <div class="row">
+                @if (_orderChanged) { <button type="button" class="btn" @onclick="SaveOrder">Reihenfolge speichern</button> }
+                <button type="button" class="btn btn-primary" @onclick="() => New(-1, true)"><Icon Name="plus" />Neue Kategorie</button>
+            </div>
+        </Actions>
+        <ChildContent>
+            @if (_msg != null) { <div class="alert alert-ok" role="status">@_msg</div> }
+            @if (_err != null) { <div class="alert alert-err" role="alert">@_err</div> }
+            <div class="alert alert-info small">Läuft das alte vBulletin parallel weiter, dort nach Änderungen an Foren oder Rechten einmal <em>Wartung › Caches neu aufbauen</em> ausführen.</div>
+
+            <section class="card">
+                @if (_snap != null)
+                {
+                    @foreach (var f in _snap.Flatten())
+                    {
+                        <div class="tree-row" style="padding-left:@(16 + f.Depth * 28)px;@(f.IsCategory && f.Depth == 0 ? "background:var(--head)" : "")">
+                            <Icon Name="@(f.IsCategory ? "folder" : !string.IsNullOrEmpty(f.Link) ? "link" : "chat")" Class="muted" />
+                            <div class="stack" style="gap:0;min-width:0;flex:1 1 220px">
+                                <span style="font-weight:@(f.IsCategory ? 700 : 600)">@f.DisplayTitle
+                                    @if (!f.IsActive) { <span class="pill" style="margin-left:6px">inaktiv</span> }
+                                    @if (_snap.ForumPermissions.Keys.Any(k => k.ForumId == f.ForumId)) { <span class="pill pill-accent" style="margin-left:6px" title="Eigene Rechte gesetzt">Rechte</span> }
+                                </span>
+                                <span class="small muted">#@f.ForumId · @(f.IsCategory ? "Kategorie" : $"{ForumTime.Number(f.ThreadCount)} Themen · {ForumTime.Number(f.ReplyCount)} Beiträge")</span>
+                            </div>
+                            <label class="small muted" style="display:flex;align-items:center;gap:6px">Pos.
+                                <input type="number" style="width:70px;min-height:36px;padding:0 8px;border:1px solid var(--input-border);border-radius:8px;background:var(--card);color:var(--ink)"
+                                       value="@_order.GetValueOrDefault(f.ForumId, f.DisplayOrder)" @onchange="e => SetOrder(f.ForumId, e.Value)" aria-label="Position von @f.DisplayTitle" />
+                            </label>
+                            <div class="row" style="gap:4px">
+                                <button type="button" class="btn btn-sm" @onclick="() => Edit(f)">Bearbeiten</button>
+                                <a class="btn btn-sm" href="/admin/forums/@f.ForumId/permissions">Rechte</a>
+                                <button type="button" class="btn btn-sm btn-ghost" title="Unterforum anlegen" @onclick="() => New(f.ForumId, false)"><Icon Name="plus" Size="16" /></button>
+                                <button type="button" class="btn btn-sm btn-ghost btn-danger" title="Löschen" @onclick="() => _confirmDelete = f"><Icon Name="trash" Size="16" /></button>
+                            </div>
+                        </div>
+                    }
+                }
+            </section>
+        </ChildContent>
+    </AdminShell>
+</main>
+
+@if (_edit != null)
+{
+    <div class="modal-back" @onclick="() => _edit = null">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="fe-title" @onclick:stopPropagation>
+            <h2 id="fe-title" class="card-title">@(_edit.ForumId > 0 ? "Forum bearbeiten" : _edit.IsCategory ? "Neue Kategorie" : "Neues Forum")</h2>
+            @if (_modalErr != null) { <div class="alert alert-err">@_modalErr</div> }
+            <div class="field"><label for="fe-t">Titel</label><input id="fe-t" @bind="_edit.Title" maxlength="100" /></div>
+            <div class="field"><label for="fe-d">Beschreibung</label><textarea id="fe-d" @bind="_edit.Description" rows="2"></textarea></div>
+            <div class="form-grid">
+                <div class="field">
+                    <label for="fe-p">Übergeordnet</label>
+                    <select id="fe-p" @bind="_edit.ParentId">
+                        <option value="-1">– oberste Ebene –</option>
+                        @foreach (var f in _snap!.Flatten().Where(x => x.ForumId != _edit.ForumId))
+                        {
+                            <option value="@f.ForumId">@(new string(' ', f.Depth * 3))@f.DisplayTitle</option>
+                        }
+                    </select>
+                </div>
+                <div class="field"><label for="fe-o">Position</label><input id="fe-o" type="number" @bind="_edit.DisplayOrder" /></div>
+            </div>
+            <div class="field"><label for="fe-l">Weiterleitungs-Link (optional)</label><input id="fe-l" @bind="_edit.Link" placeholder="https://…" /><span class="hint">Macht das Forum zu einem Link auf eine andere Seite.</span></div>
+            <div class="stack" style="gap:0">
+                <label class="toggle-row">Kategorie (enthält nur Unterforen, keine Themen)<input type="checkbox" @bind="_edit.IsCategory" /></label>
+                <label class="toggle-row">Aktiv (sichtbar)<input type="checkbox" @bind="_edit.Active" /></label>
+                <label class="toggle-row">Schreiben erlaubt<input type="checkbox" @bind="_edit.AllowPosting" /></label>
+                <label class="toggle-row">Neue Themen müssen freigeschaltet werden<input type="checkbox" @bind="_edit.ModerateThreads" /></label>
+                <label class="toggle-row">Neue Antworten müssen freigeschaltet werden<input type="checkbox" @bind="_edit.ModeratePosts" /></label>
+                <label class="toggle-row">Beiträge zählen zum Beitragszähler<input type="checkbox" @bind="_edit.CountPosts" /></label>
+                <label class="toggle-row">BBCode erlaubt<input type="checkbox" @bind="_edit.AllowBbCode" /></label>
+                <label class="toggle-row">Bilder erlaubt<input type="checkbox" @bind="_edit.AllowImages" /></label>
+                <label class="toggle-row">Smilies erlaubt<input type="checkbox" @bind="_edit.AllowSmilies" /></label>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn" @onclick="() => _edit = null">Abbrechen</button>
+                <button type="button" class="btn btn-primary" @onclick="SaveForum">Speichern</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_confirmDelete != null)
+{
+    <div class="modal-back" @onclick="() => _confirmDelete = null">
+        <div class="modal" role="alertdialog" aria-modal="true" @onclick:stopPropagation>
+            <h2 class="card-title">„@_confirmDelete.DisplayTitle“ löschen?</h2>
+            <p class="muted" style="margin:0">Das geht nur, wenn das Forum leer ist und keine Unterforen hat. Themen verschiebst oder löschst du vorher unter <a href="/admin/threads?forum=@_confirmDelete.ForumId">Themen</a>.</p>
+            <div class="form-actions">
+                <button type="button" class="btn" @onclick="() => _confirmDelete = null">Abbrechen</button>
+                <button type="button" class="btn btn-danger" @onclick="DeleteForum">Löschen</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private BoardSnapshot? _snap;
+    private ForumAdminService.ForumEdit? _edit;
+    private Forum? _confirmDelete;
+    private readonly Dictionary<int, int> _order = new();
+    private bool _orderChanged;
+    private string? _msg, _err, _modalErr;
+
+    protected override async Task OnInitializedAsync() => _snap = await Cache.GetAsync();
+
+    private void Edit(Forum f) { _modalErr = null; _edit = ForumAdminService.ForumEdit.From(f, _snap!.Bits); }
+
+    private void New(int parentId, bool category)
+    {
+        _modalErr = null;
+        var siblings = parentId > 0 ? _snap!.Forum(parentId)?.Children : _snap!.RootForums;
+        _edit = new ForumAdminService.ForumEdit
+        {
+            ParentId = parentId, IsCategory = category, DisplayOrder = (siblings?.Select(x => x.DisplayOrder).DefaultIfEmpty(0).Max() ?? 0) + 10
+        };
+    }
+
+    private void SetOrder(int id, object? v)
+    {
+        if (int.TryParse(v?.ToString(), out var n)) { _order[id] = n; _orderChanged = true; }
+    }
+
+    private async Task SaveOrder()
+    {
+        await Admin.ReorderAsync(_order);
+        _order.Clear(); _orderChanged = false;
+        _snap = await Cache.GetAsync();
+        _msg = "Reihenfolge gespeichert.";
+    }
+
+    private async Task SaveForum()
+    {
+        try
+        {
+            var id = await Admin.SaveForumAsync(_edit!);
+            await Audit.LogAsync(await Current.GetAsync(), _edit!.ForumId > 0 ? "forum.edit" : "forum.create", $"{id} {_edit.Title}", "");
+            _msg = $"„{_edit.Title}“ gespeichert.";
+            _edit = null;
+            _snap = await Cache.GetAsync();
+        }
+        catch (ArgumentException ex) { _modalErr = ex.Message; }
+    }
+
+    private async Task DeleteForum()
+    {
+        var f = _confirmDelete!;
+        _confirmDelete = null;
+        var err = await Admin.DeleteForumAsync(f.ForumId);
+        if (err != null) { _err = err; _msg = null; return; }
+        await Audit.LogAsync(await Current.GetAsync(), "forum.delete", $"{f.ForumId} {f.DisplayTitle}", "");
+        _msg = $"„{f.DisplayTitle}“ gelöscht."; _err = null;
+        _snap = await Cache.GetAsync();
+    }
+}

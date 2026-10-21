@@ -1,0 +1,111 @@
+﻿@inherits LayoutComponentBase
+@inject CurrentUser Current
+@inject BoardCache Cache
+@inject NavigationManager Nav
+
+<a href="#main" class="sr-only">Zum Inhalt springen</a>
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            @if (!string.IsNullOrEmpty(_settings?.LogoFile))
+            {
+                <img class="brand-logo" src="/branding/logo?v=@Uri.EscapeDataString(_settings.LogoFile)" alt="@_settings.BoardName" />
+            }
+            else
+            {
+                <span class="brand-mark" aria-hidden="true">@(string.IsNullOrEmpty(_settings?.BoardName) ? "F" : _settings!.BoardName[..1].ToUpperInvariant())</span>
+                <span class="brand-name">@(_settings?.BoardName ?? "Forum")</span>
+            }
+        </a>
+        <nav class="nav" aria-label="Hauptnavigation">
+            <a href="/" class="@Active("")">Foren</a>
+            <a href="/new" class="@Active("new")">Neue Beiträge</a>
+            <a href="/members" class="@Active("members")">Mitglieder</a>
+            @if (_user?.IsAdmin == true)
+            {
+                <a href="/admin" class="@Active("admin")">Admin</a>
+            }
+            else if (_isMod)
+            {
+                <a href="/admin/moderation" class="@Active("admin")">Moderation</a>
+            }
+        </nav>
+        <form role="search" action="/search" method="get" class="search-box" data-enhance-nav="false">
+            <Icon Name="search" />
+            <label for="q" class="sr-only">Forum durchsuchen</label>
+            <input id="q" name="q" type="search" placeholder="Forum durchsuchen …" />
+        </form>
+        <div class="user-area">
+            @if (_user == null || _user.IsGuest)
+            {
+                <a href="/login?returnUrl=@Uri.EscapeDataString(ReturnUrl)" class="btn btn-sm">Anmelden</a>
+                @if (_settings?.AllowRegistration == true)
+                {
+                    <a href="/register" class="btn btn-sm btn-primary hide-mobile">Registrieren</a>
+                }
+            }
+            else
+            {
+                <a href="/account/pm" class="icon-btn" aria-label="Private Nachrichten@(_user.PmUnread > 0 ? $" ({_user.PmUnread} ungelesen)" : "")">
+                    <Icon Name="mail" Size="20" />
+                    @if (_user.PmUnread > 0) { <span class="badge-count">@_user.PmUnread</span> }
+                </a>
+                <a href="/account" class="user-chip">
+                    <Avatar UserId="_user.UserId" Name="@_user.Username" HasAvatar="_user.HasAvatar" Revision="_user.AvatarRevision" />
+                    <span class="name">@_user.Username</span>
+                </a>
+            }
+        </div>
+    </div>
+</header>
+
+<div id="main">
+    @Body
+</div>
+
+<footer class="site-footer">
+    <div class="container">
+        <span>© @DateTime.Now.Year @(_settings?.BoardName)</span>
+        <div class="row" style="gap:20px">
+            <a href="/">Startseite</a>
+            @if (_user != null && !_user.IsGuest)
+            {
+                <form method="post" action="/logout" class="inline">
+                    <AntiforgeryToken />
+                    <button type="submit" class="btn btn-ghost btn-sm" style="padding:0;min-height:0">Abmelden</button>
+                </form>
+            }
+        </div>
+    </div>
+</footer>
+
+@code {
+    private ForumUser? _user;
+    private BoardSettings? _settings;
+    private bool _isMod;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var snap = await Cache.GetAsync();
+            _settings = snap.Settings;
+            _user = await Current.GetAsync();
+            _isMod = new Permissions(snap).IsAnyModerator(_user);
+        }
+        catch
+        {
+            // DB nicht eingerichtet (Setup-Seite) – Layout ohne Daten anzeigen
+        }
+    }
+
+    private string RelPath => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0];
+    private string ReturnUrl => "/" + Nav.ToBaseRelativePath(Nav.Uri);
+
+    private string? Active(string seg)
+    {
+        var p = RelPath;
+        if (seg == "") return p == "" || p.StartsWith("forum") || p.StartsWith("thread") ? "active" : null;
+        return p == seg || p.StartsWith(seg + "/") ? "active" : null;
+    }
+}

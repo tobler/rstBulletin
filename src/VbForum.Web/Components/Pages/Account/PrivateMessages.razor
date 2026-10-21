@@ -1,0 +1,197 @@
+@page "/account/pm"
+@page "/account/pm/{PmId:long}"
+@page "/account/pm/new"
+@attribute [Authorize]
+@inject CurrentUser Current
+@inject BoardCache Cache
+@inject PmRepository Pms
+@inject UserRepository Users
+@inject PostRenderer Renderer
+@inject MailService Mail
+@inject NavigationManager Nav
+
+<PageTitle>Private Nachrichten</PageTitle>
+
+@if (!_loaded) { return; }
+<main class="page container">
+    <AccountShell User="_user!" Active="pm">
+        @if (_message != null) { <div class="alert alert-ok" role="status">@_message</div> }
+        @if (_error != null) { <div class="alert alert-err" role="alert">@_error</div> }
+
+        @if (_isNew)
+        {
+            <EditForm Model="Compose" FormName="pm" OnSubmit="SendAsync" class="card card-pad stack" Enhance>
+                <h2 class="card-title">Neue Nachricht</h2>
+                <div class="field">
+                    <label for="pm-to">Empfänger</label>
+                    <InputText id="pm-to" @bind-Value="Compose!.To" placeholder="Benutzername (mehrere mit ; trennen)" />
+                </div>
+                <div class="field">
+                    <label for="pm-title">Betreff</label>
+                    <InputText id="pm-title" @bind-Value="Compose.Title" maxlength="85" />
+                </div>
+                <div class="field">
+                    <label for="pm-text">Nachricht</label>
+                    <InputTextArea id="pm-text" @bind-Value="Compose.Message" rows="10" />
+                    <span class="hint">BBCode wird unterstützt.</span>
+                </div>
+                <input type="hidden" name="Compose.ParentPmId" value="@Compose.ParentPmId" />
+                <div class="form-actions"><a class="btn" href="/account/pm">Abbrechen</a><button type="submit" class="btn btn-primary"><Icon Name="send" />Senden</button></div>
+            </EditForm>
+        }
+        else if (_pm != null)
+        {
+            <article class="card card-pad stack">
+                <div class="row" style="justify-content:space-between">
+                    <h2 class="card-title" style="margin:0">@_pm.DisplayTitle</h2>
+                    <a class="btn btn-sm" href="/account/pm@(_pm.FolderId == PmRepository.Sent ? "?folder=sent" : "")">← Zurück</a>
+                </div>
+                <div class="row small muted">
+                    <Avatar UserId="_pm.FromUserId" Name="@HtmlUtil.CleanTitle(_pm.FromUsername)" Size="32" />
+                    <span>Von <strong style="color:var(--ink)">@HtmlUtil.CleanTitle(_pm.FromUsername)</strong> an @string.Join(", ", PmRepository.Recipients(_pm.ToUserArray)) · @ForumTime.Full(_pm.Dateline)</span>
+                </div>
+                <div class="post-body">@_body</div>
+                <div class="post-actions">
+                    <form method="post" @formname="pmdelete" @onsubmit="DeleteAsync" class="inline">
+                        <AntiforgeryToken />
+                        <button type="submit" class="btn btn-sm btn-danger" data-confirm="Nachricht löschen?">Löschen</button>
+                    </form>
+                    @if (_pm.FolderId != PmRepository.Sent && _pm.FromUserId > 0)
+                    {
+                        <a class="btn btn-sm btn-primary" href="/account/pm/new?reply=@_pm.PmId"><Icon Name="reply" />Antworten</a>
+                    }
+                </div>
+            </article>
+        }
+        else
+        {
+            <section class="card">
+                <div class="card-head" style="flex-wrap:wrap">
+                    <div class="seg" role="group" aria-label="Ordner">
+                        <a href="/account/pm" class="@(!_sent ? "on" : "")">Posteingang</a>
+                        <a href="/account/pm?folder=sent" class="@(_sent ? "on" : "")">Gesendet</a>
+                    </div>
+                    <a class="btn btn-primary btn-sm" href="/account/pm/new"><Icon Name="plus" />Neue Nachricht</a>
+                </div>
+                @foreach (var m in _list!.Items)
+                {
+                    <a href="/account/pm/@m.PmId" class="thread-row" style="text-decoration:none;color:inherit;@(m.IsUnread && !_sent ? "background:var(--unread-bg)" : "")">
+                        <div class="thread-main" style="align-items:center">
+                            <Avatar UserId="m.FromUserId" Name="@HtmlUtil.CleanTitle(m.FromUsername)" Size="36" />
+                            <div class="stack" style="gap:2px;min-width:0">
+                                <span class="thread-title @(m.IsUnread && !_sent ? "unread" : "")">@m.DisplayTitle</span>
+                                <span class="thread-sub">@(_sent ? "an " + string.Join(", ", PmRepository.Recipients(m.ToUserArray)) : HtmlUtil.CleanTitle(m.FromUsername)) · @ForumTime.Relative(m.Dateline)@(m.IsUnread && !_sent ? " · ungelesen" : "")</span>
+                            </div>
+                        </div>
+                    </a>
+                }
+                @if (_list.Items.Count == 0) { <div class="empty">Keine Nachrichten.</div> }
+                <div class="list-foot">
+                    <span>@ForumTime.Number(_list.Total) Nachrichten</span>
+                    <Pager Page="_list.Page" PageCount="_list.PageCount" Href='p => Links.WithQuery("/account/pm", new Dictionary<string, object?> { ["folder"] = _sent ? "sent" : null, ["page"] = p > 1 ? p : null })' />
+                </div>
+            </section>
+        }
+    </AccountShell>
+</main>
+
+@code {
+    public sealed class ComposeInput
+    {
+        public string To { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string Message { get; set; } = "";
+        public long ParentPmId { get; set; }
+    }
+
+    [Parameter] public long PmId { get; set; }
+    [SupplyParameterFromQuery] public string? Folder { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageQ { get; set; }
+    [SupplyParameterFromQuery(Name = "to")] public string? ToQ { get; set; }
+    [SupplyParameterFromQuery(Name = "reply")] public long? ReplyQ { get; set; }
+    [SupplyParameterFromQuery(Name = "msg")] public string? Msg { get; set; }
+    [SupplyParameterFromForm(FormName = "pm")] public ComposeInput? Compose { get; set; }
+
+    private bool _loaded, _isNew, _sent;
+    private ForumUser? _user;
+    private PagedResult<PrivateMessage>? _list;
+    private PrivateMessage? _pm;
+    private MarkupString _body;
+    private string? _message, _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _user = await Current.GetAsync();
+            _isNew = Nav.ToBaseRelativePath(Nav.Uri).StartsWith("account/pm/new");
+            _sent = Folder == "sent";
+            if (Msg == "sent") _message = "Nachricht gesendet.";
+            if (Msg == "deleted") _message = "Nachricht gelöscht.";
+            if (_isNew)
+            {
+                if (Compose == null)
+                {
+                    Compose = new ComposeInput { To = ToQ ?? "" };
+                    if (ReplyQ is long r && await Pms.GetAsync(_user.UserId, r) is { } orig)
+                    {
+                        Compose.To = HtmlUtil.CleanTitle(orig.FromUsername);
+                        Compose.Title = orig.DisplayTitle.StartsWith("Re:", StringComparison.OrdinalIgnoreCase) ? orig.DisplayTitle : "Re: " + orig.DisplayTitle;
+                        Compose.Message = $"[quote={HtmlUtil.CleanTitle(orig.FromUsername)}]{HtmlUtil.DecodeNumericEntities(orig.Message)}[/quote]\n";
+                        Compose.ParentPmId = orig.PmId;
+                    }
+                }
+            }
+            else if (PmId > 0)
+            {
+                _pm = await Pms.GetAsync(_user.UserId, PmId);
+                if (_pm == null) { _error = "Nachricht nicht gefunden."; await LoadListAsync(); return; }
+                _body = Renderer.Render(_pm.Message, await Renderer.ContextAsync(null));
+                if (_pm.IsUnread) await Pms.MarkReadAsync(_user.UserId, PmId);
+            }
+            else await LoadListAsync();
+        }
+        finally { _loaded = true; }
+    }
+
+    private async Task LoadListAsync() =>
+        _list = await Pms.ListAsync(_user!.UserId, _sent ? PmRepository.Sent : PmRepository.Inbox, Math.Max(1, PageQ ?? 1), 25);
+
+    private async Task SendAsync()
+    {
+        var c = Compose!;
+        if (string.IsNullOrWhiteSpace(c.Title)) { _error = "Bitte einen Betreff eingeben."; return; }
+        if (string.IsNullOrWhiteSpace(c.Message)) { _error = "Die Nachricht ist leer."; return; }
+        if (_user!.IsBanned) { _error = "Gesperrte Konten können keine Nachrichten senden."; return; }
+        if (await Pms.SentLastHourAsync(_user.UserId) >= 30 && !_user.IsAdmin) { _error = "Du hast in der letzten Stunde sehr viele Nachrichten gesendet. Bitte warte etwas."; return; }
+
+        var snap = await Cache.GetAsync();
+        var recipients = new List<PmRepository.Recipient>();
+        foreach (var name in c.To.Split(';', ',').Select(x => x.Trim()).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Take(5))
+        {
+            var u = await Users.GetByNameAsync(name);
+            if (u == null) { _error = $"Benutzer „{name}“ nicht gefunden."; return; }
+            var quota = snap.Groups.GetValueOrDefault(u.UserGroupId)?.PmQuota ?? 0;
+            if (quota > 0 && u.PmTotal >= quota && !_user.IsAdmin) { _error = $"Das Postfach von {u.DisplayName} ist voll."; return; }
+            recipients.Add(new PmRepository.Recipient(u.UserId, u.DisplayName, u.PmTotal, quota));
+        }
+        if (recipients.Count == 0) { _error = "Bitte mindestens einen Empfänger angeben."; return; }
+
+        await Pms.SendAsync(_user.UserId, _user.Username, recipients, c.Title, c.Message, c.ParentPmId);
+        if (await Mail.IsConfiguredAsync())
+        {
+            var url = await Mail.AbsoluteUrlAsync("/account/pm");
+            foreach (var r in recipients)
+                if (await Users.GetAsync(r.UserId) is { } ru)
+                    _ = Mail.SendAsync(ru.Email, $"Neue private Nachricht von {_user.Username}",
+                        $"Hallo {ru.DisplayName},\n\n{_user.Username} hat dir eine private Nachricht geschickt: „{c.Title}“\n\nLesen: {url}");
+        }
+        Nav.NavigateTo("/account/pm?msg=sent", forceLoad: true);
+    }
+
+    private async Task DeleteAsync()
+    {
+        await Pms.DeleteAsync(_user!.UserId, new[] { PmId });
+        Nav.NavigateTo("/account/pm?msg=deleted", forceLoad: true);
+    }
+}

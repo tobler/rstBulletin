@@ -1,0 +1,115 @@
+@page "/admin/moderation"
+@attribute [Authorize(Policy = "Moderator")]
+@rendermode InteractiveServer
+@inject ModerationService Mod
+@inject PostingService Posting
+@inject PostRepository Posts
+@inject ThreadRepository Threads
+@inject BoardCache Cache
+@inject CurrentUser Current
+@inject TokenRepository Audit
+
+<PageTitle>Moderation</PageTitle>
+
+<main class="page container">
+    <AdminShell Active="mod" Title="Moderation" Subtitle="Freischalten, gelöschte Inhalte wiederherstellen oder endgültig entfernen">
+        @if (_msg != null) { <div class="alert alert-ok" role="status">@_msg</div> }
+        <div class="seg" role="tablist" style="align-self:flex-start">
+            <button type="button" role="tab" aria-selected="@(!_deleted)" class="@(!_deleted ? "on" : "")" @onclick="() => Show(false)">Wartet auf Freigabe (@_queue.Count)</button>
+            <button type="button" role="tab" aria-selected="@_deleted" class="@(_deleted ? "on" : "")" @onclick="() => Show(true)">Gelöscht (@_trash.Count)</button>
+        </div>
+
+        <section class="card">
+            @foreach (var i in _deleted ? _trash : _queue)
+            {
+                <div class="thread-row" style="align-items:flex-start">
+                    <div class="thread-main">
+                        <div class="stack" style="gap:3px;min-width:0">
+                            <div class="thread-title-line">
+                                <span class="pill @(i.Type == "thread" ? "pill-accent" : "")">@(i.Type == "thread" ? "Thema" : "Antwort")</span>
+                                <a class="thread-title" href="@(i.Type == "thread" ? $"/thread/{i.ThreadId}" : $"/post/{i.Id}")" target="_blank">@i.Title</a>
+                            </div>
+                            <span class="thread-sub">@(_deleted ? "gelöscht von " : "von ")@i.Username · @ForumTime.Full(i.Dateline) · @_snap?.Forum(i.ForumId)?.DisplayTitle</span>
+                            @if (!string.IsNullOrWhiteSpace(i.Excerpt)) { <span class="small" style="color:var(--ink-2)">@(_deleted ? "Grund: " : "")@i.Excerpt</span> }
+                        </div>
+                    </div>
+                    <div class="row" style="gap:6px">
+                        @if (_deleted)
+                        {
+                            <button type="button" class="btn btn-sm" @onclick="() => Restore(i)">Wiederherstellen</button>
+                            @if (_isSuper) { <button type="button" class="btn btn-sm btn-danger" @onclick="() => Purge(i)">Endgültig löschen</button> }
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-sm btn-primary" @onclick="() => Approve(i)"><Icon Name="check" Size="16" />Freischalten</button>
+                            <button type="button" class="btn btn-sm btn-danger" @onclick="() => Delete(i)">Löschen</button>
+                        }
+                    </div>
+                </div>
+            }
+            @if ((_deleted ? _trash : _queue).Count == 0) { <div class="empty">@(_deleted ? "Keine gelöschten Inhalte." : "Nichts zu tun – alles freigeschaltet.")</div> }
+        </section>
+    </AdminShell>
+</main>
+
+@code {
+    private BoardSnapshot? _snap;
+    private ForumUser? _me;
+    private Permissions? _perms;
+    private List<ModerationService.QueueItem> _queue = new(), _trash = new();
+    private bool _deleted, _isSuper;
+    private string? _msg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _me = await Current.GetAsync();
+        _isSuper = _me.IsAdmin || _me.IsSuperMod;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _snap = await Cache.GetAsync();
+        _perms = new Permissions(_snap);
+        bool Can(ModerationService.QueueItem i) => _snap.Forum(i.ForumId) is { } f && _perms.IsModerator(_me!, f);
+        _queue = (await Mod.QueueAsync()).Where(Can).ToList();
+        _trash = (await Mod.DeletedAsync()).Where(Can).ToList();
+    }
+
+    private void Show(bool deleted) => _deleted = deleted;
+
+    private async Task Approve(ModerationService.QueueItem i)
+    {
+        if (i.Type == "thread") await Mod.ApproveThreadAsync(i.Id);
+        else if (await Posts.GetAsync(i.Id) is { } p) await Posting.ApprovePostAsync(p);
+        await Audit.LogAsync(_me!, $"{i.Type}.approve", $"{i.Id} {i.Title}", "");
+        _msg = "Freigeschaltet."; await LoadAsync();
+    }
+
+    private async Task Delete(ModerationService.QueueItem i)
+    {
+        var t = await Threads.GetAsync(i.ThreadId);
+        if (t == null) return;
+        if (i.Type == "thread") await Mod.SoftDeleteThreadAsync(_me!, t, "Nicht freigegeben");
+        else if (await Posts.GetAsync(i.Id) is { } p) await Posting.SoftDeletePostAsync(_me!, p, t, "Nicht freigegeben");
+        await Audit.LogAsync(_me!, $"{i.Type}.reject", $"{i.Id} {i.Title}", "");
+        _msg = "Gelöscht."; await LoadAsync();
+    }
+
+    private async Task Restore(ModerationService.QueueItem i)
+    {
+        if (i.Type == "thread") await Mod.RestoreThreadAsync(i.Id);
+        else if (await Posts.GetAsync(i.Id) is { } p) await Posting.RestorePostAsync(p);
+        await Audit.LogAsync(_me!, $"{i.Type}.restore", $"{i.Id} {i.Title}", "");
+        _msg = "Wiederhergestellt."; await LoadAsync();
+    }
+
+    private async Task Purge(ModerationService.QueueItem i)
+    {
+        if (!_isSuper) return;
+        if (i.Type == "thread") await Mod.HardDeleteThreadAsync(i.Id);
+        else if (await Posts.GetAsync(i.Id) is { } p) await Posting.HardDeletePostAsync(p);
+        await Audit.LogAsync(_me!, $"{i.Type}.harddelete", $"{i.Id} {i.Title}", "");
+        _msg = "Endgültig gelöscht."; await LoadAsync();
+    }
+}

@@ -1,0 +1,245 @@
+@page "/admin/users"
+@attribute [Authorize(Policy = "Admin")]
+@rendermode InteractiveServer
+@inject UserRepository Users
+@inject BoardCache Cache
+@inject AdminStats Stats
+@inject CurrentUser Current
+@inject TokenRepository Audit
+
+<PageTitle>Benutzer – Administration</PageTitle>
+
+<main class="page container">
+    <AdminShell Active="users" Title="Benutzer" Subtitle="@($"{ForumTime.Number(_snap?.TotalMembers ?? 0)} Konten")">
+        @if (_msg != null) { <div class="alert alert-ok" role="status">@_msg</div> }
+
+        <section class="card card-pad stack" style="gap:12px">
+            <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px">
+                <div class="field"><label for="u-n">Name</label><input id="u-n" @bind="_q.Name" @bind:event="oninput" @onkeyup="KeySearch" /></div>
+                <div class="field"><label for="u-e">E-Mail</label><input id="u-e" @bind="_q.Email" @onkeyup="KeySearch" /></div>
+                <div class="field"><label for="u-ip">IP-Adresse (Anfang)</label><input id="u-ip" @bind="_q.Ip" @onkeyup="KeySearch" /></div>
+                <div class="field">
+                    <label for="u-g">Gruppe</label>
+                    <select id="u-g" value="@(_q.GroupId?.ToString() ?? "")" @onchange="e => { _q.GroupId = int.TryParse(e.Value?.ToString(), out var g) ? g : null; }">
+                        <option value="">Alle</option>
+                        @foreach (var g in _groups) { <option value="@g.UserGroupId">@g.DisplayTitle</option> }
+                    </select>
+                </div>
+                <div class="field"><label for="u-pmin">Beiträge ab</label><input id="u-pmin" type="number" @bind="_q.MinPosts" /></div>
+                <div class="field"><label for="u-pmax">Beiträge bis</label><input id="u-pmax" type="number" @bind="_q.MaxPosts" /></div>
+                <div class="field">
+                    <label for="u-in">Inaktiv seit</label>
+                    <select id="u-in" @bind="_inactive">
+                        <option value="0">egal</option><option value="30">30 Tagen</option><option value="365">1 Jahr</option><option value="1095">3 Jahren</option><option value="1825">5 Jahren</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="u-s">Sortierung</label>
+                    <select id="u-s" @bind="_q.Sort">
+                        <option value="joindate">Registriert</option><option value="lastactivity">Zuletzt aktiv</option><option value="posts">Beiträge</option><option value="username">Name</option><option value="email">E-Mail</option>
+                    </select>
+                </div>
+            </div>
+            <div class="row" style="justify-content:space-between">
+                <label class="check"><input type="checkbox" @bind="_q.Desc" />absteigend</label>
+                <div class="row">
+                    <button type="button" class="btn" @onclick="ResetFilter">Zurücksetzen</button>
+                    <button type="button" class="btn btn-primary" @onclick="() => SearchAsync(1)"><Icon Name="search" />Suchen</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="toolbar">
+                <span class="small"><strong>@ForumTime.Number(_result?.Total ?? 0)</strong> Treffer @if (_selected.Count > 0) { <text>· @_selected.Count ausgewählt</text> }</span>
+                <div class="row">
+                    <select @bind="_bulkGroup" aria-label="Zielgruppe">
+                        @foreach (var g in _groups) { <option value="@g.UserGroupId">@g.DisplayTitle</option> }
+                    </select>
+                    <button type="button" class="btn btn-sm" disabled="@(_selected.Count == 0)" @onclick="BulkMove">In Gruppe verschieben</button>
+                    <button type="button" class="btn btn-sm btn-danger" disabled="@(_selected.Count == 0)" @onclick="() => _confirm = true">Löschen</button>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th style="width:32px"><input type="checkbox" aria-label="Alle auswählen" checked="@AllSelected" @onchange="ToggleAll" /></th>
+                            <th>Benutzer</th><th class="hide-mobile">E-Mail</th><th>Gruppe</th><th class="num">Beiträge</th><th class="hide-mobile">Registriert</th><th class="hide-mobile">Zuletzt aktiv</th><th class="hide-mobile">IP</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var u in _result?.Items ?? new List<UserRow>())
+                        {
+                            <tr class="@(_selected.Contains(u.UserId) ? "sel" : "")">
+                                <td><input type="checkbox" aria-label="@u.DisplayName auswählen" checked="@_selected.Contains(u.UserId)" @onchange="() => ToggleSel(u.UserId)" /></td>
+                                <td><a href="/admin/users/@u.UserId" style="font-weight:600">@u.DisplayName</a><div class="small muted">#@u.UserId</div></td>
+                                <td class="hide-mobile small">@u.Email</td>
+                                <td class="small">@(_snap!.Groups.GetValueOrDefault(u.UserGroupId)?.DisplayTitle ?? u.UserGroupId.ToString())</td>
+                                <td class="num">@ForumTime.Number(u.Posts)</td>
+                                <td class="hide-mobile small nowrap">@ForumTime.Date(u.JoinDate)</td>
+                                <td class="hide-mobile small nowrap">@ForumTime.Relative(u.LastActivity, false)</td>
+                                <td class="hide-mobile small">@u.IpAddress</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="list-foot">
+                <span></span>
+                @if (_result != null && _result.PageCount > 1)
+                {
+                    <div class="row">
+                        <button type="button" class="btn btn-sm" disabled="@(_result.Page <= 1)" @onclick="() => SearchAsync(_result.Page - 1)">← Zurück</button>
+                        <span>Seite @_result.Page von @ForumTime.Number(_result.PageCount)</span>
+                        <button type="button" class="btn btn-sm" disabled="@(_result.Page >= _result.PageCount)" @onclick="() => SearchAsync(_result.Page + 1)">Weiter →</button>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="card card-pad stack">
+            <h2 class="card-title">Aufräumen: Karteileichen &amp; Spam-Konten</h2>
+            <p class="small muted" style="margin:0">Findet Konten ohne einen einzigen Beitrag, die seit langer Zeit nicht aktiv waren. Gelöscht werden nur Konten in den Gruppen „neue Mitglieder“ und „E-Mail unbestätigt“ – Moderatoren, Admins und Sondergruppen bleiben unberührt.</p>
+            <div class="row">
+                <label class="small" for="cl-days">Inaktiv seit mindestens</label>
+                <select id="cl-days" @bind="_cleanupDays"><option value="365">1 Jahr</option><option value="730">2 Jahren</option><option value="1825">5 Jahren</option></select>
+                <button type="button" class="btn" @onclick="CountCleanup" disabled="@_busy">Zählen</button>
+                @if (_cleanupCount != null)
+                {
+                    <span><strong>@ForumTime.Number(_cleanupCount.Value)</strong> Konten gefunden</span>
+                    @if (_cleanupCount > 0) { <button type="button" class="btn btn-danger" disabled="@_busy" @onclick="RunCleanup">@(_busy ? _progress : "Jetzt löschen (in Blöcken zu 500)")</button> }
+                }
+            </div>
+        </section>
+    </AdminShell>
+</main>
+
+@if (_confirm)
+{
+    <div class="modal-back" @onclick="() => _confirm = false">
+        <div class="modal" role="alertdialog" aria-modal="true" @onclick:stopPropagation>
+            <h2 class="card-title">@_selected.Count Konten löschen?</h2>
+            <p class="muted" style="margin:0">Beiträge bleiben als Gastbeiträge mit dem bisherigen Namen erhalten. Private Nachrichten, Abos und Profildaten werden entfernt. Das kann nicht rückgängig gemacht werden.</p>
+            <div class="form-actions">
+                <button type="button" class="btn" @onclick="() => _confirm = false">Abbrechen</button>
+                <button type="button" class="btn btn-danger" @onclick="BulkDelete">Endgültig löschen</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery] public string? Sort { get; set; }
+    [SupplyParameterFromQuery] public int? Group { get; set; }
+
+    private BoardSnapshot? _snap;
+    private List<UserGroup> _groups = new();
+    private UserRepository.AdminQuery _q = new();
+    private PagedResult<UserRow>? _result;
+    private readonly HashSet<long> _selected = new();
+    private int _inactive, _bulkGroup = 2, _cleanupDays = 1825;
+    private long? _cleanupCount;
+    private bool _confirm, _busy;
+    private string? _msg, _progress;
+
+    private bool AllSelected => _result != null && _result.Items.Count > 0 && _result.Items.All(u => _selected.Contains(u.UserId));
+
+    protected override async Task OnInitializedAsync()
+    {
+        _snap = await Cache.GetAsync();
+        _groups = _snap.Groups.Values.OrderBy(g => g.UserGroupId).ToList();
+        _bulkGroup = _snap.Settings.RegisteredGroupId;
+        if (Sort != null) _q.Sort = Sort;
+        if (Group != null) _q.GroupId = Group;
+        await SearchAsync(1);
+    }
+
+    private async Task KeySearch(KeyboardEventArgs e) { if (e.Key == "Enter") await SearchAsync(1); }
+
+    private async Task SearchAsync(int page)
+    {
+        _q.Page = page;
+        _q.InactiveSince = _inactive > 0 ? ForumTime.Now - _inactive * 86400L : null;
+        _result = await Users.AdminSearchAsync(_q);
+    }
+
+    private async Task ResetFilter() { _q = new(); _inactive = 0; _selected.Clear(); await SearchAsync(1); }
+
+    private void ToggleSel(long id) { if (!_selected.Remove(id)) _selected.Add(id); }
+
+    private void ToggleAll(ChangeEventArgs e)
+    {
+        if (_result == null) return;
+        if (e.Value is true) foreach (var u in _result.Items) _selected.Add(u.UserId);
+        else foreach (var u in _result.Items) _selected.Remove(u.UserId);
+    }
+
+    private async Task BulkMove()
+    {
+        var me = await Current.GetAsync();
+        foreach (var id in _selected.ToList())
+        {
+            if (id == me.UserId) continue;
+            var u = await Users.GetAsync(id);
+            if (u == null) continue;
+            await Users.AdminUpdateAsync(u.UserId, u.DisplayName, u.Email, _bulkGroup, u.MemberGroupIds, u.UserTitle, u.CustomTitle == 1, u.Homepage, u.Posts);
+        }
+        await Audit.LogAsync(me, "user.bulkmove", $"{_selected.Count} → Gruppe {_bulkGroup}", "");
+        _msg = $"{_selected.Count} Benutzer verschoben.";
+        _selected.Clear();
+        await SearchAsync(_q.Page);
+    }
+
+    private async Task BulkDelete()
+    {
+        _confirm = false;
+        var me = await Current.GetAsync();
+        int n = 0;
+        foreach (var id in _selected.ToList())
+        {
+            if (id == me.UserId) continue;
+            await Users.DeleteAsync(id); n++;
+        }
+        await Audit.LogAsync(me, "user.bulkdelete", $"{n} Konten", "");
+        Cache.Invalidate();
+        _msg = $"{n} Konten gelöscht.";
+        _selected.Clear();
+        await SearchAsync(_q.Page);
+    }
+
+    private async Task CountCleanup()
+    {
+        _busy = true;
+        _cleanupCount = await Stats.CountCleanupCandidatesAsync(_cleanupDays, _snap!.Settings.RegisteredGroupId, _snap.Settings.AwaitingEmailGroupId);
+        _busy = false;
+    }
+
+    private async Task RunCleanup()
+    {
+        _busy = true;
+        var me = await Current.GetAsync();
+        long total = 0;
+        try
+        {
+            while (true)
+            {
+                var ids = await Stats.CleanupCandidatesAsync(_cleanupDays, _snap!.Settings.RegisteredGroupId, _snap.Settings.AwaitingEmailGroupId, 500);
+                if (ids.Count == 0) break;
+                foreach (var id in ids) { if (id != me.UserId) await Users.DeleteAsync(id); total++; }
+                _progress = $"{ForumTime.Number(total)} gelöscht …";
+                StateHasChanged();
+                if (total >= 50000) break;
+            }
+        }
+        finally
+        {
+            await Audit.LogAsync(me, "user.cleanup", $"{total} inaktive Konten ohne Beiträge", "");
+            Cache.Invalidate();
+            _busy = false; _progress = null;
+            _msg = $"{ForumTime.Number(total)} Konten gelöscht.";
+            _cleanupCount = null;
+            await SearchAsync(1);
+        }
+    }
+}

@@ -1,0 +1,204 @@
+@page "/forum/{Id:int}"
+@page "/forum/{Id:int}/{Slug}"
+@inject BoardCache Cache
+@inject CurrentUser Current
+@inject ThreadRepository Threads
+@inject NavigationManager Nav
+
+<PageTitle>@(_forum?.DisplayTitle ?? "Forum") – @_snap?.Settings.BoardName</PageTitle>
+
+@if (!_loaded) { return; }
+<main class="page container">
+    @if (_forum == null)
+    {
+        <div class="card card-pad">
+            <h1 class="card-title">Forum nicht gefunden</h1>
+            <p class="muted">Das Forum existiert nicht oder du hast keine Berechtigung, es zu sehen.</p>
+            @if (_user?.IsGuest == true) { <p><a class="btn btn-primary" href="/login?returnUrl=@Uri.EscapeDataString(Nav.ToBaseRelativePath(Nav.Uri))">Anmelden</a></p> }
+        </div>
+    }
+    else
+    {
+        <nav aria-label="Brotkrumen" class="breadcrumb">
+            <a href="/">Foren</a>
+            @foreach (var b in _snap!.Breadcrumb(_forum).SkipLast(1))
+            {
+                <span aria-hidden="true">›</span><a href="@Links.Forum(b)">@b.DisplayTitle</a>
+            }
+            <span aria-hidden="true">›</span><span class="current">@_forum.DisplayTitle</span>
+        </nav>
+
+        <div class="page-head">
+            <div>
+                <h1>@_forum.DisplayTitle</h1>
+                @if (!string.IsNullOrWhiteSpace(_forum.DisplayDescription)) { <p>@_forum.DisplayDescription</p> }
+            </div>
+            <div class="row">
+                @if (!_user!.IsGuest && !_forum.IsCategory)
+                {
+                    <form method="post" action="/markread" class="inline">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="forumId" value="@_forum.ForumId" />
+                        <input type="hidden" name="returnUrl" value="@Links.Forum(_forum)" />
+                        <button type="submit" class="btn hide-mobile">Als gelesen markieren</button>
+                    </form>
+                }
+                @if (_canPost)
+                {
+                    <a href="/forum/@_forum.ForumId/new" class="btn btn-primary"><Icon Name="plus" />Neues Thema</a>
+                }
+                else if (_user.IsGuest && !_forum.IsCategory)
+                {
+                    <a href="/login?returnUrl=@Uri.EscapeDataString(Links.Forum(_forum))" class="btn">Anmelden zum Schreiben</a>
+                }
+            </div>
+        </div>
+
+        @if (_children.Count > 0)
+        {
+            @if (_forum.IsCategory)
+            {
+                <section class="card">
+                    @foreach (var s in _children) { <ForumRow Summary="s" /> }
+                </section>
+            }
+            else
+            {
+                <section aria-label="Unterforen" class="sub-grid">
+                    @foreach (var s in _children)
+                    {
+                        <a href="@s.Url" class="sub-card">
+                            <span class="t">@if (s.Unread) { <span class="dot" title="Neue Beiträge"></span> }@s.Forum.DisplayTitle</span>
+                            <span class="small muted">@ForumTime.Number(s.Threads) Themen · @ForumTime.Number(s.Posts) Beiträge</span>
+                        </a>
+                    }
+                </section>
+            }
+        }
+
+        @if (!_forum.IsCategory)
+        {
+            <section class="card" aria-label="Themen">
+                <form method="get" action="@Links.Forum(_forum)" class="toolbar">
+                    <div class="row">
+                        <label for="sort">Sortieren nach</label>
+                        <select id="sort" name="sort" data-autosubmit>
+                            @foreach (var (val, label) in SortOptions)
+                            {
+                                <option value="@val" selected="@(val == SortKey)">@label</option>
+                            }
+                        </select>
+                        <input type="hidden" name="order" value="@(Desc ? "desc" : "asc")" />
+                        <div class="seg" role="group" aria-label="Reihenfolge">
+                            <a href="@Url(1, SortKey, true, Unread)" class="@(Desc ? "on" : "")" aria-current="@(Desc ? "true" : null)">@(SortKey == "title" ? "Z–A" : "Neueste zuerst")</a>
+                            <a href="@Url(1, SortKey, false, Unread)" class="@(!Desc ? "on" : "")" aria-current="@(!Desc ? "true" : null)">@(SortKey == "title" ? "A–Z" : "Älteste zuerst")</a>
+                        </div>
+                        @if (!_user.IsGuest)
+                        {
+                            <label class="check"><input type="checkbox" name="unread" value="1" checked="@Unread" data-autosubmit />Nur ungelesene</label>
+                        }
+                        <noscript><button type="submit" class="btn btn-sm">Anwenden</button></noscript>
+                    </div>
+                    <Pager Page="_page" PageCount="_result!.PageCount" Href="p => Url(p, SortKey, Desc, Unread)" />
+                </form>
+
+                <div class="list-head" aria-hidden="true">
+                    <span style="flex:999 1 380px">Thema</span><span style="flex:0 0 150px">Antworten / Aufrufe</span><span style="flex:1 1 220px">Letzte Antwort</span>
+                </div>
+
+                @foreach (var t in _sticky.Concat(_result.Items))
+                {
+                    <ThreadRow Thread="t" PostsPerPage="_snap.Settings.PostsPerPage" />
+                }
+                @if (_sticky.Count == 0 && _result.Items.Count == 0)
+                {
+                    <div class="empty">@(Unread ? "Keine ungelesenen Themen." : "In diesem Forum gibt es noch keine Themen.")</div>
+                }
+
+                <div class="list-foot">
+                    <span>
+                        @if (_result.Total > 0)
+                        {
+                            @($"Themen {(_page - 1) * _result.PageSize + 1}–{Math.Min(_page * _result.PageSize, _result.Total)} von {ForumTime.Number(_result.Total)}")
+                        }
+                    </span>
+                    <Pager Page="_page" PageCount="_result.PageCount" Href="p => Url(p, SortKey, Desc, Unread)" />
+                </div>
+            </section>
+        }
+    }
+</main>
+
+@code {
+    [Parameter] public int Id { get; set; }
+    [Parameter] public string? Slug { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageQ { get; set; }
+    [SupplyParameterFromQuery(Name = "sort")] public string? SortQ { get; set; }
+    [SupplyParameterFromQuery(Name = "order")] public string? OrderQ { get; set; }
+    [SupplyParameterFromQuery(Name = "unread")] public string? UnreadQ { get; set; }
+
+    private static readonly (string, string)[] SortOptions =
+        { ("lastpost", "Letzte Antwort"), ("dateline", "Erstellungsdatum"), ("replies", "Antworten"), ("views", "Aufrufe"), ("title", "Titel") };
+
+    private BoardSnapshot? _snap;
+    private ForumUser? _user;
+    private Forum? _forum;
+    private List<ForumSummary> _children = new();
+    private List<ForumThread> _sticky = new();
+    private PagedResult<ForumThread>? _result;
+    private int _page = 1;
+    private bool _canPost;
+
+    private string SortKey => SortOptions.Any(o => o.Item1 == SortQ) ? SortQ! : (_forum?.DefaultSortField is "dateline" or "title" or "views" ? _forum.DefaultSortField : "lastpost");
+    private bool Desc => OrderQ switch { "asc" => false, "desc" => true, _ => SortKey != "title" };
+    private bool Unread => UnreadQ == "1" && _user?.IsGuest == false;
+
+    private string Url(int page, string sort, bool desc, bool unread) => Links.WithQuery(Links.Forum(_forum!), new Dictionary<string, object?>
+    {
+        ["sort"] = sort == "lastpost" ? null : sort,
+        ["order"] = desc == (sort != "title") ? null : (desc ? "desc" : "asc"),
+        ["unread"] = unread ? "1" : null,
+        ["page"] = page > 1 ? page : null,
+    });
+
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { await LoadAsync(); } finally { _loaded = true; }
+    }
+
+    private async Task LoadAsync()
+    {
+        _snap = await Cache.GetAsync();
+        _user = await Current.GetAsync();
+        var perms = new Permissions(_snap);
+        var f = _snap.Forum(Id);
+        if (f == null || !perms.CanSeeForum(_user, f)) return;
+        if (!string.IsNullOrWhiteSpace(f.Link)) { Nav.NavigateTo(f.Link); return; }
+        _forum = f;
+        var reads = await Threads.ForumReadTimesAsync(_user.UserId);
+        var cutoff = Links.UnreadCutoff(_snap.Settings);
+        _children = f.Children.Where(c => perms.CanSeeForum(_user, c)).Select(c => ForumSummary.Build(c, perms, _user, reads, cutoff)).ToList();
+        if (f.IsCategory) return;
+
+        _canPost = perms.CanPostThread(_user, f);
+        if (!perms.CanReadThreads(_user, f))
+        {
+            _result = new PagedResult<ForumThread>(Array.Empty<ForumThread>(), 0, 1, 1);
+            return;
+        }
+        bool mod = perms.IsModerator(_user, f);
+        _page = Math.Max(1, PageQ ?? 1);
+        var sort = SortKey switch
+        {
+            "dateline" => ThreadSort.Dateline, "replies" => ThreadSort.Replies, "views" => ThreadSort.Views, "title" => ThreadSort.Title, _ => ThreadSort.LastPost
+        };
+        (_sticky, _result) = await Threads.ListAsync(new ThreadListQuery
+        {
+            ForumId = f.ForumId, Page = _page, PageSize = _snap.Settings.ThreadsPerPage, Sort = sort, Desc = Desc, OnlyUnread = Unread,
+            IncludeModerated = mod, IncludeDeleted = mod,
+            OnlyUserId = perms.CanViewOthers(_user, f) ? null : _user.UserId
+        }, _user.UserId, Math.Max(cutoff, reads.GetValueOrDefault(f.ForumId)));
+    }
+}
