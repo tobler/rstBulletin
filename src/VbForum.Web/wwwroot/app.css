@@ -283,6 +283,20 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .site-footer .container { padding-top: 20px; padding-bottom: 20px; display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: space-between; font-size: 13px; color: var(--muted); }
 .site-footer a { color: var(--muted-2); }
 
+.badge-count[hidden] { display: none; }
+
+/* PN-Popup */
+.toast { position: fixed; right: 20px; bottom: 20px; z-index: 90; width: min(340px, calc(100vw - 32px)); background: var(--card); border: 1px solid var(--border);
+  border-left: 0; border-radius: var(--radius); box-shadow: 0 12px 32px rgba(0,0,0,.18); padding: 14px 16px; display: flex; flex-direction: column; gap: 6px;
+  animation: toast-in .25s ease-out; }
+.toast-head { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); }
+.toast-body { font-size: 15px; overflow-wrap: anywhere; }
+.toast-meta { font-size: 12px; color: var(--muted); }
+.toast-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }
+@keyframes toast-in { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+@media (max-width: 640px) { .toast { right: 16px; left: 16px; bottom: 16px; width: auto; } }
+
 /* Bild-Lightbox */
 .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 16px; cursor: zoom-out; }
 .lightbox img { max-width: 100%; max-height: 100%; border-radius: 6px; }

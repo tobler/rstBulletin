@@ -90,11 +90,11 @@
         var cutoff = Math.Max(Links.UnreadCutoff(_snap.Settings), _user.IsGuest ? 0 : 0);
 
         var loose = new List<ForumSummary>();
-        foreach (var root in _snap.RootForums.Where(f => perms.CanSeeForum(_user, f)))
+        foreach (var root in _snap.RootForums.Where(f => perms.IsListed(_user, f)))
         {
-            if (root.IsCategory)
+            if (root.IsCategory && perms.CanSeeForum(_user, root))
             {
-                var rows = root.Children.Where(c => perms.CanSeeForum(_user, c))
+                var rows = root.Children.Where(c => perms.IsListed(_user, c))
                     .Select(c => ForumSummary.Build(c, perms, _user, reads, cutoff)).ToList();
                 if (rows.Count > 0) _sections.Add(new Section(root.ForumId, root.DisplayTitle, rows));
             }

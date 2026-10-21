@@ -12,7 +12,7 @@ public sealed class UserRepository(Db db)
     private string Select => $"""
         SELECT u.userid, u.usergroupid, u.membergroupids, u.displaygroupid, u.username, u.password, u.salt, u.email,
                u.homepage, u.usertitle, u.customtitle, u.joindate, u.lastvisit, u.lastactivity, u.lastpost, u.lastpostid,
-               u.posts, u.options, u.birthday, u.ipaddress, u.autosubscribe, u.pmtotal, u.pmunread, u.avatarrevision,
+               u.posts, u.options, u.birthday, u.ipaddress, u.autosubscribe, u.pmtotal, u.pmunread, u.pmpopup, u.avatarrevision,
                (SELECT COUNT(*) FROM {T.CustomAvatar} ca WHERE ca.userid = u.userid AND ca.visible = 1) AS hascustomavatar,
                a.hash AS modernhash
         FROM {T.User} u LEFT JOIN {Tables.OwnUserAuth} a ON a.userid = u.userid
@@ -130,6 +130,13 @@ public sealed class UserRepository(Db db)
         await c.ExecuteAsync($"UPDATE {T.User} SET email = @email WHERE userid = @userId", new { userId, email = email.Trim() });
     }
 
+    /// <summary>vB-Feld pmpopup: 0 = aus, sonst an.</summary>
+    public async Task SetPmPopupAsync(long userId, bool on)
+    {
+        await using var c = await db.OpenAsync();
+        await c.ExecuteAsync($"UPDATE {T.User} SET pmpopup = @v WHERE userid = @userId", new { userId, v = on ? 1 : 0 });
+    }
+
     public async Task SetAutoSubscribeAsync(long userId, int mode)
     {
         await using var c = await db.OpenAsync();
@@ -177,8 +184,8 @@ public sealed class UserRepository(Db db)
         var userId = await c.ExecuteScalarAsync<long>(
             $"""
             INSERT INTO {T.User} (usergroupid, username, password, passworddate, email, usertitle, joindate, lastvisit, lastactivity,
-                options, ipaddress, salt, fbuserid, fbname, fbaccesstoken, autosubscribe, showvbcode, timezoneoffset)
-            VALUES (@groupId, @name, @legacyHash, CURDATE(), @email, @title, @now, @now, @now, @options, @ip, @salt, '', '', '', 1, 2, '1');
+                options, ipaddress, salt, fbuserid, fbname, fbaccesstoken, autosubscribe, showvbcode, timezoneoffset, pmpopup)
+            VALUES (@groupId, @name, @legacyHash, CURDATE(), @email, @title, @now, @now, @now, @options, @ip, @salt, '', '', '', 1, 2, '1', 1);
             SELECT LAST_INSERT_ID();
             """,
             new { groupId, name = VbText.ForStorage(HtmlUtil.ToVbStoredTitle(username.Trim())), legacyHash, email = email.Trim(), title, now, options, ip, salt });

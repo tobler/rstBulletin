@@ -9,7 +9,15 @@
 
 @if (!_loaded) { return; }
 <main class="page container">
-    @if (_forum == null)
+    @if (_lockedForum != null)
+    {
+        <div class="card card-pad stack" style="gap:10px">
+            <h1 class="card-title"><Icon Name="lock" /> @_lockedForum.DisplayTitle</h1>
+            <p class="muted" style="margin:0">Dieses Forum ist nur für berechtigte Mitglieder zugänglich.</p>
+            @if (_user?.IsGuest == true) { <p style="margin:0"><a class="btn btn-primary" href="/login?returnUrl=@Uri.EscapeDataString("/" + Nav.ToBaseRelativePath(Nav.Uri))">Anmelden</a></p> }
+        </div>
+    }
+    else if (_forum == null)
     {
         <div class="card card-pad">
             <h1 class="card-title">Forum nicht gefunden</h1>
@@ -76,6 +84,10 @@
             }
         }
 
+        @if (!_forum.IsCategory && _titlesOnly)
+        {
+            <div class="alert alert-info">Du kannst in diesem Forum die Thementitel sehen, aber keine Beiträge lesen.@(_user!.IsGuest ? " Melde dich an – vielleicht hast du dann Zugriff." : "")</div>
+        }
         @if (!_forum.IsCategory)
         {
             <section class="card" aria-label="Themen">
@@ -147,7 +159,8 @@
     private List<ForumThread> _sticky = new();
     private PagedResult<ForumThread>? _result;
     private int _page = 1;
-    private bool _canPost;
+    private bool _canPost, _titlesOnly;
+    private Forum? _lockedForum;
 
     private string SortKey => SortOptions.Any(o => o.Item1 == SortQ) ? SortQ! : (_forum?.DefaultSortField is "dateline" or "title" or "views" ? _forum.DefaultSortField : "lastpost");
     private bool Desc => OrderQ switch { "asc" => false, "desc" => true, _ => SortKey != "title" };
@@ -174,16 +187,22 @@
         _user = await Current.GetAsync();
         var perms = new Permissions(_snap);
         var f = _snap.Forum(Id);
-        if (f == null || !perms.CanSeeForum(_user, f)) return;
+        if (f == null) return;
+        if (!perms.CanSeeForum(_user, f))
+        {
+            if (perms.ShowsLocked(_user, f)) _lockedForum = f;
+            return;
+        }
         if (!string.IsNullOrWhiteSpace(f.Link)) { Nav.NavigateTo(f.Link); return; }
         _forum = f;
         var reads = await Threads.ForumReadTimesAsync(_user.UserId);
         var cutoff = Links.UnreadCutoff(_snap.Settings);
-        _children = f.Children.Where(c => perms.CanSeeForum(_user, c)).Select(c => ForumSummary.Build(c, perms, _user, reads, cutoff)).ToList();
+        _children = f.Children.Where(c => perms.IsListed(_user, c)).Select(c => ForumSummary.Build(c, perms, _user, reads, cutoff)).ToList();
         if (f.IsCategory) return;
 
         _canPost = perms.CanPostThread(_user, f);
-        if (!perms.CanReadThreads(_user, f))
+        _titlesOnly = !perms.CanReadThreads(_user, f);
+        if (!perms.CanListThreads(_user, f))
         {
             _result = new PagedResult<ForumThread>(Array.Empty<ForumThread>(), 0, 1, 1);
             return;

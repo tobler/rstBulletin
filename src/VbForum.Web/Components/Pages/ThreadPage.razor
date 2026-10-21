@@ -110,6 +110,8 @@
             </div>
         }
 
+        @if (!_noContent)
+        {
         <form method="get" action="@Links.Thread(_thread)" class="card toolbar" style="border-radius:12px;border:1px solid var(--border)">
             <div class="row">
                 <span class="small" style="font-weight:500;color:var(--muted-2)">Beiträge</span>
@@ -127,13 +129,21 @@
             </div>
             <Pager Page="_page" PageCount="_posts!.PageCount" Href="p => Url(p, NewestFirst, Q)" />
         </form>
+        }
 
-        @if (_posts.Items.Count == 0)
+        @if (_noContent)
+        {
+            <div class="card card-pad stack" style="gap:10px">
+                <p style="margin:0"><Icon Name="lock" /> Du darfst die Beiträge in diesem Forum nicht lesen.</p>
+                @if (_user.IsGuest) { <p style="margin:0"><a class="btn btn-primary" href="/login?returnUrl=@Uri.EscapeDataString(CurrentUrl)">Anmelden</a></p> }
+            </div>
+        }
+        else if (_posts!.Items.Count == 0)
         {
             <div class="card empty">@(string.IsNullOrEmpty(Q) ? "Keine Beiträge sichtbar." : $"Keine Beiträge mit „{Q}“ in diesem Thema.")</div>
         }
 
-        @foreach (var p in _posts.Items)
+        @foreach (var p in _posts!.Items)
         {
             var a = _authors.GetValueOrDefault(p.UserId);
             var own = !_user.IsGuest && p.UserId == _user.UserId;
@@ -264,7 +274,7 @@
     private Dictionary<long, MarkupString> _signatures = new();
     private Dictionary<long, VbForum.Core.BbCode.BbCodeContext> _contexts = new();
     private HashSet<long> _canEdit = new(), _canDelete = new();
-    private bool _isMod, _canReply, _subscribed;
+    private bool _isMod, _canReply, _subscribed, _noContent;
     private int _page = 1;
 
     private bool NewestFirst => OrderQ == "desc";
@@ -297,8 +307,15 @@
         if (t.IsRedirect) { Nav.NavigateTo($"/thread/{t.PollId}"); return; }
         var f = _snap.Forum(t.ForumId);
         var perms = new Permissions(_snap);
-        if (f == null || !perms.CanReadThread(_user, f, t)) return;
+        if (f == null || !perms.CanSeeThread(_user, f, t)) return;
         _thread = t; _forum = f;
+        if (!perms.CanReadThread(_user, f, t))
+        {
+            // Titel ja, Inhalt nein (Recht „Themen lesen“ fehlt)
+            _noContent = true;
+            _posts = new PagedResult<Post>(Array.Empty<Post>(), 0, 1, 1);
+            return;
+        }
         _isMod = perms.IsModerator(_user, f);
         _canReply = perms.CanReply(_user, f, t);
 

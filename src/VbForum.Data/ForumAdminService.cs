@@ -27,6 +27,7 @@ public sealed class ForumAdminService(Db db, BoardCache cache)
         public bool AllowSmilies { get; set; } = true;
         public bool AllowBbCode { get; set; } = true;
         public string Link { get; set; } = "";
+        public int ShowPrivate { get; set; }
 
         public static ForumEdit From(Forum f, Bitfields b) => new()
         {
@@ -40,6 +41,7 @@ public sealed class ForumAdminService(Db db, BoardCache cache)
             AllowSmilies = (f.Options & b.Opt(ForumOption.AllowSmilies)) != 0,
             AllowBbCode = (f.Options & b.Opt(ForumOption.AllowBbCode)) != 0,
             Link = f.Link,
+            ShowPrivate = f.ShowPrivate,
         };
     }
 
@@ -77,20 +79,21 @@ public sealed class ForumAdminService(Db db, BoardCache cache)
             parent = e.ParentId <= 0 ? -1 : e.ParentId,
             order = e.DisplayOrder,
             options,
-            link = e.Link.Trim()
+            link = e.Link.Trim(),
+            sp = Math.Clamp(e.ShowPrivate, 0, 2)
         };
         await using var c = await db.OpenAsync();
         int id = e.ForumId;
         if (id > 0)
             await c.ExecuteAsync($"""
                 UPDATE {T.Forum} SET title = @title, title_clean = @clean, description = @desc, description_clean = @desc,
-                  parentid = @parent, displayorder = @order, options = @options, link = @link WHERE forumid = @id
+                  parentid = @parent, displayorder = @order, options = @options, link = @link, showprivate = @sp WHERE forumid = @id
                 """, p);
         else
             id = await c.ExecuteScalarAsync<int>($"""
                 INSERT INTO {T.Forum} (title, title_clean, description, description_clean, options, displayorder, parentid, parentlist, childlist,
-                    link, newpostemail, newthreademail, defaultsortfield, defaultsortorder)
-                VALUES (@title, @clean, @desc, @desc, @options, @order, @parent, '', '', @link, '', '', 'lastpost', 'desc');
+                    link, newpostemail, newthreademail, defaultsortfield, defaultsortorder, showprivate)
+                VALUES (@title, @clean, @desc, @desc, @options, @order, @parent, '', '', @link, '', '', 'lastpost', 'desc', @sp);
                 SELECT LAST_INSERT_ID();
                 """, p);
         await RebuildTreeListsAsync(c);

@@ -47,7 +47,7 @@ public sealed class ForumGateMiddleware(RequestDelegate next)
             ctx.Response.Redirect("/setup");
             return;
         }
-        if (IsInfrastructure(path) || path.StartsWithSegments("/attachment") || path.StartsWithSegments("/avatar") || path.StartsWithSegments("/imgproxy"))
+        if (IsInfrastructure(path) || path.StartsWithSegments("/api") || path.StartsWithSegments("/attachment") || path.StartsWithSegments("/avatar") || path.StartsWithSegments("/imgproxy"))
         {
             await next(ctx);
             return;

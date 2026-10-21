@@ -14,6 +14,9 @@
 
         <EditForm Model="Settings" FormName="notify" OnSubmit="SaveAsync" class="card card-pad stack" style="gap:4px" Enhance>
             <h2 class="card-title" style="margin-bottom:10px">Benachrichtigungen</h2>
+            @* Sorgt dafür, dass das Formular auch ohne gesetzte Häkchen ankommt *@
+            <input type="hidden" name="Settings.Posted" value="true" />
+            <label class="toggle-row">Popup anzeigen, wenn eine neue private Nachricht eintrifft <InputCheckbox @bind-Value="Settings!.PmPopup" /></label>
             <label class="toggle-row">Eigene Themen und Antworten automatisch abonnieren <InputCheckbox @bind-Value="Settings!.AutoSubscribe" /></label>
             <label class="toggle-row">Bei neuen Antworten in abonnierten Themen eine E-Mail schicken <InputCheckbox @bind-Value="Settings.Email" /></label>
             @if (!_smtp) { <p class="small muted" style="margin:6px 0 0">Hinweis: Der E-Mail-Versand ist im Forum derzeit nicht eingerichtet.</p> }
@@ -49,7 +52,7 @@
 </main>
 
 @code {
-    public sealed class NotifyInput { public bool AutoSubscribe { get; set; } public bool Email { get; set; } }
+    public sealed class NotifyInput { public bool AutoSubscribe { get; set; } public bool Email { get; set; } public bool PmPopup { get; set; } public bool Posted { get; set; } }
 
     [SupplyParameterFromForm(FormName = "notify")] public NotifyInput? Settings { get; set; }
 
@@ -67,7 +70,7 @@
             if (Settings == null)
             {
                 var row = await Users.GetAsync(_user.UserId);
-                Settings = new NotifyInput { AutoSubscribe = row!.AutoSubscribe >= 0, Email = row.AutoSubscribe >= 1 };
+                Settings = new NotifyInput { AutoSubscribe = row!.AutoSubscribe >= 0, Email = row.AutoSubscribe >= 1, PmPopup = row.PmPopup != 0 };
             }
             _subs = await Subs.ListAsync(_user.UserId);
         }
@@ -78,6 +81,7 @@
     {
         // vB: -1 = kein Abo, 0 = Abo ohne Mail, 1 = sofortige Mail
         await Users.SetAutoSubscribeAsync(_user!.UserId, !Settings!.AutoSubscribe ? -1 : Settings.Email ? 1 : 0);
+        await Users.SetPmPopupAsync(_user.UserId, Settings.PmPopup);
         _message = "Einstellungen gespeichert.";
     }
 }

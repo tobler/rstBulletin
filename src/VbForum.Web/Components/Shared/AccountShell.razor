@@ -10,7 +10,7 @@
         <a href="/account" class="@(Active == "profil" ? "active" : "")"><Icon Name="user" />Profil</a>
         <a href="/account/password" class="@(Active == "password" ? "active" : "")"><Icon Name="lock" />Passwort</a>
         <a href="/account/email" class="@(Active == "email" ? "active" : "")"><Icon Name="mail" />E-Mail-Adresse</a>
-        <a href="/account/subscriptions" class="@(Active == "subs" ? "active" : "")"><Icon Name="bell" />Abonnements</a>
+        <a href="/account/subscriptions" class="@(Active == "subs" ? "active" : "")"><Icon Name="bell" />Benachrichtigungen &amp; Abos</a>
         <a href="/account/pm" class="@(Active == "pm" ? "active" : "")"><Icon Name="chat" />Private Nachrichten @if (User.PmUnread > 0) { <span class="count">@User.PmUnread</span> }</a>
         <div class="sep"></div>
         <form method="post" action="/logout" style="margin:0">

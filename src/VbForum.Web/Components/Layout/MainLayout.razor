@@ -46,9 +46,9 @@
             }
             else
             {
-                <a href="/account/pm" class="icon-btn" aria-label="Private Nachrichten@(_user.PmUnread > 0 ? $" ({_user.PmUnread} ungelesen)" : "")">
+                <a href="/account/pm" class="icon-btn" id="pm-link" data-pm-poll aria-label="Private Nachrichten@(_user.PmUnread > 0 ? $" ({_user.PmUnread} ungelesen)" : "")">
                     <Icon Name="mail" Size="20" />
-                    @if (_user.PmUnread > 0) { <span class="badge-count">@_user.PmUnread</span> }
+                    <span class="badge-count" id="pm-count" hidden="@(_user.PmUnread == 0)">@_user.PmUnread</span>
                 </a>
                 <a href="/account" class="user-chip">
                     <Avatar UserId="_user.UserId" Name="@_user.Username" HasAvatar="_user.HasAvatar" Revision="_user.AvatarRevision" />

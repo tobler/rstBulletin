@@ -87,6 +87,22 @@ public static class Endpoints
 
         app.MapGet("/imgproxy", ImageProxyAsync);
 
+        // ---------- Status für das PN-Popup (wird vom Browser regelmäßig abgefragt) ----------
+        app.MapGet("/api/pm/status", async (HttpContext http, PmRepository pms, UserRepository users) =>
+        {
+            http.Response.Headers.CacheControl = "no-store";
+            if (!long.TryParse(http.User.FindFirstValue(ForumClaims.UserId), out var uid)) return Results.Unauthorized();
+            var u = await users.GetAsync(uid);
+            if (u == null) return Results.Unauthorized();
+            var s = await pms.StatusAsync(uid);
+            return Results.Json(new
+            {
+                unread = s.Unread,
+                popup = u.PmPopup != 0,
+                latest = s.LatestId == 0 ? null : new { id = s.LatestId, from = s.From, title = s.Title, time = ForumTime.Relative(s.Dateline) }
+            });
+        });
+
         // ---------- Alte vBulletin-URLs ----------
 
         app.MapGet("/showthread.php", (HttpContext h) =>

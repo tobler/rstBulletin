@@ -118,6 +118,22 @@ public sealed class PmRepository(Db db)
         return result;
     }
 
+    public sealed record Status(int Unread, long LatestId, string From, string Title, long Dateline);
+
+    /// <summary>Leichtgewichtige Abfrage für das Popup: Anzahl ungelesener + neueste ungelesene Nachricht.</summary>
+    public async Task<Status> StatusAsync(long userId)
+    {
+        await using var c = await db.OpenAsync();
+        var unread = await c.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM {T.Pm} WHERE userid = @userId AND folderid <> -1 AND messageread = 0", new { userId });
+        if (unread == 0) return new Status(0, 0, "", "", 0);
+        var r = await c.QueryFirstOrDefaultAsync<(long, string, string, long)>($"""
+            SELECT CAST(pm.pmid AS SIGNED), t.fromusername, t.title, CAST(t.dateline AS SIGNED)
+            FROM {T.Pm} pm JOIN {T.PmText} t ON t.pmtextid = pm.pmtextid
+            WHERE pm.userid = @userId AND pm.folderid <> -1 AND pm.messageread = 0 ORDER BY pm.pmid DESC LIMIT 1
+            """, new { userId });
+        return new Status(unread, r.Item1, HtmlUtil.CleanTitle(r.Item2), HtmlUtil.CleanTitle(r.Item3), r.Item4);
+    }
+
     public async Task<int> SentLastHourAsync(long userId)
     {
         await using var c = await db.OpenAsync();

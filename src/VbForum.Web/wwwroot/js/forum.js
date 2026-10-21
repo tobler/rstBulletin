@@ -56,4 +56,69 @@
     clearDraft: function (key) { try { localStorage.removeItem('vbf-draft-' + key); } catch (e) { } },
     scrollTo: function (id) { var el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
   };
+
+  // ---------- Popup bei neuen privaten Nachrichten ----------
+  // Fragt (nur bei sichtbarem Tab) jede Minute den PN-Status ab. Jede Nachricht wird nur einmal gemeldet –
+  // auch über mehrere offene Tabs hinweg (gemerkt in localStorage).
+  var SEEN = 'vbf-pm-seen', timer = null, busy = false;
+  function seen() { try { return parseInt(localStorage.getItem(SEEN) || '0', 10) || 0; } catch (e) { return 0; } }
+  function markSeen(id) { try { if (id > seen()) localStorage.setItem(SEEN, String(id)); } catch (e) { } }
+
+  function updateBadge(n) {
+    var b = document.getElementById('pm-count'), l = document.getElementById('pm-link');
+    if (b) { b.textContent = n; b.hidden = n === 0; }
+    if (l) l.setAttribute('aria-label', 'Private Nachrichten' + (n > 0 ? ' (' + n + ' ungelesen)' : ''));
+  }
+
+  function closeToast() { var t = document.getElementById('pm-toast'); if (t) t.remove(); }
+
+  function showToast(m, unread) {
+    closeToast();
+    var t = document.createElement('div');
+    t.id = 'pm-toast'; t.className = 'toast'; t.setAttribute('role', 'status'); t.setAttribute('aria-live', 'polite');
+    var head = document.createElement('div'); head.className = 'toast-head';
+    head.textContent = unread > 1 ? unread + ' neue private Nachrichten' : 'Neue private Nachricht';
+    var body = document.createElement('div'); body.className = 'toast-body';
+    var from = document.createElement('strong'); from.textContent = m.from;
+    body.appendChild(from); body.appendChild(document.createTextNode(': ' + m.title));
+    var meta = document.createElement('div'); meta.className = 'toast-meta'; meta.textContent = m.time;
+    var actions = document.createElement('div'); actions.className = 'toast-actions';
+    var close = document.createElement('button'); close.type = 'button'; close.className = 'btn btn-sm btn-ghost'; close.textContent = 'Schließen';
+    close.onclick = function () { markSeen(m.id); closeToast(); };
+    var read = document.createElement('a'); read.className = 'btn btn-sm btn-primary'; read.href = '/account/pm/' + m.id; read.textContent = 'Lesen';
+    read.onclick = function () { markSeen(m.id); };
+    actions.appendChild(close); actions.appendChild(read);
+    t.appendChild(head); t.appendChild(body); t.appendChild(meta); t.appendChild(actions);
+    document.body.appendChild(t);
+  }
+
+  function poll() {
+    if (busy || document.hidden || !document.querySelector('[data-pm-poll]')) return;
+    busy = true;
+    fetch('/api/pm/status', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (s) {
+        if (!s) return;
+        updateBadge(s.unread);
+        var onPmPage = location.pathname.indexOf('/account/pm') === 0;
+        if (s.popup && s.latest && s.latest.id > seen() && !onPmPage) showToast(s.latest, s.unread);
+        if (!s.latest) closeToast();
+      })
+      .catch(function () { })
+      .then(function () { busy = false; });
+  }
+
+  function start() {
+    if (timer || !document.querySelector('[data-pm-poll]')) return;
+    timer = setInterval(poll, 60000);
+    setTimeout(poll, 1500);
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
+  // Anderer Tab hat die Meldung geschlossen → hier auch schließen
+  window.addEventListener('storage', function (e) { if (e.key === SEEN) closeToast(); });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+  // Nach erweiterter Navigation (Blazor) erneut prüfen
+  window.addEventListener('load', function () {
+    if (window.Blazor && Blazor.addEventListener) Blazor.addEventListener('enhancedload', function () { start(); poll(); });
+  });
 })();

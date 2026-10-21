@@ -1,11 +1,18 @@
 @{ var f = Summary.Forum; }
 <div class="forum-row">
     <div class="forum-main">
-        <span class="forum-icon @(Summary.Unread ? "unread" : "")" title="@(Summary.Unread ? "Neue Beiträge" : "Keine neuen Beiträge")">
-            <Icon Name="@(f.IsCategory ? "folder" : !string.IsNullOrEmpty(f.Link) ? "link" : "chat")" Size="20" />
+        <span class="forum-icon @(Summary.Unread ? "unread" : "")" title="@(Summary.Locked ? "Kein Zugriff" : Summary.Unread ? "Neue Beiträge" : "Keine neuen Beiträge")">
+            <Icon Name="@(Summary.Locked ? "lock" : f.IsCategory ? "folder" : !string.IsNullOrEmpty(f.Link) ? "link" : "chat")" Size="20" />
         </span>
         <div class="stack" style="gap:4px;min-width:0">
-            <a href="@Summary.Url" class="forum-title">@f.DisplayTitle</a>
+            @if (Summary.Locked)
+            {
+                <span class="forum-title" style="color:var(--muted-2)">@f.DisplayTitle <span class="pill" style="margin-left:4px;vertical-align:2px">Kein Zugriff</span></span>
+            }
+            else
+            {
+                <a href="@Summary.Url" class="forum-title">@f.DisplayTitle</a>
+            }
             @if (!string.IsNullOrWhiteSpace(f.DisplayDescription))
             {
                 <span class="forum-desc">@f.DisplayDescription</span>
@@ -21,7 +28,18 @@
             }
         </div>
     </div>
-    @if (string.IsNullOrEmpty(f.Link))
+    @if (Summary.Locked)
+    {
+        @if (Summary.ShowCounts)
+        {
+            <div class="forum-stats">
+                <div><strong>@ForumTime.Number(Summary.Threads)</strong>Themen</div>
+                <div><strong>@ForumTime.Number(Summary.Posts)</strong>Beiträge</div>
+            </div>
+        }
+        <div class="forum-last"><span class="muted">Nur für berechtigte Mitglieder</span></div>
+    }
+    else if (string.IsNullOrEmpty(f.Link))
     {
         <div class="forum-stats">
             <div><strong>@ForumTime.Number(Summary.Threads)</strong>Themen</div>

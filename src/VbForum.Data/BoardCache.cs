@@ -21,6 +21,8 @@ public sealed class BoardSnapshot
     public required List<CustomBbCode> CustomCodes { get; init; }
     public required Bitfields Bits { get; init; }
     public required long PostContentTypeId { get; init; }
+    /// <summary>vB-Einstellung showprivateforums: 0 = private Foren ausblenden, 1 = mit Schloss zeigen, 2 = mit Schloss und Zählern.</summary>
+    public int ShowPrivateForums { get; init; }
     public required Dictionary<string, string> ProfileFields { get; init; }
     public required long TotalMembers { get; init; }
     public required long NewestUserId { get; init; }
@@ -98,7 +100,7 @@ public sealed class BoardCache(Db db, ILogger<BoardCache> log)
             $"""
             SELECT forumid, title, description, options, displayorder, replycount, threadcount, lastpost, lastposter,
                    lastposterid, lastpostid, lastthread, lastthreadid, parentid, parentlist, childlist, password, link,
-                   defaultsortfield, defaultsortorder
+                   defaultsortfield, defaultsortorder, showprivate
             FROM {t.Forum} ORDER BY displayorder, forumid
             """)).ToDictionary(f => f.ForumId);
         var roots = new List<Forum>();
@@ -153,6 +155,10 @@ public sealed class BoardCache(Db db, ILogger<BoardCache> log)
         }
         catch (Exception ex) { log.LogWarning(ex, "Profilfelder nicht lesbar."); }
 
+        int showPrivate = 0;
+        try { int.TryParse(await c.ExecuteScalarAsync<string?>($"SELECT value FROM {t.Setting} WHERE varname = 'showprivateforums'"), out showPrivate); }
+        catch (Exception ex) { log.LogWarning(ex, "showprivateforums nicht lesbar."); }
+
         var members = await c.ExecuteScalarAsync<long>($"SELECT COUNT(*) FROM {t.User}");
         var newest = await c.QueryFirstOrDefaultAsync<(long, string)>($"SELECT CAST(userid AS SIGNED), username FROM {t.User} ORDER BY userid DESC LIMIT 1");
 
@@ -160,7 +166,7 @@ public sealed class BoardCache(Db db, ILogger<BoardCache> log)
         {
             Settings = settings, Forums = forums, RootForums = roots, Groups = groups, ForumPermissions = fp,
             Moderators = mods, Smilies = smilies, CustomCodes = codes, Bits = bits, PostContentTypeId = postType,
-            ProfileFields = profileFields, TotalMembers = members, NewestUserId = newest.Item1,
+            ProfileFields = profileFields, ShowPrivateForums = showPrivate, TotalMembers = members, NewestUserId = newest.Item1,
             NewestUsername = HtmlUtil.CleanTitle(newest.Item2)
         };
     }

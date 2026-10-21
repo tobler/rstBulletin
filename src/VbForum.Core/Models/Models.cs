@@ -26,6 +26,8 @@ public sealed class Forum
     public string Link { get; set; } = "";
     public string DefaultSortField { get; set; } = "lastpost";
     public string DefaultSortOrder { get; set; } = "desc";
+    /// <summary>vB: 0 = Board-Standard, 1 = für Gruppen ohne Zugriff ausblenden, 2 = mit Schloss anzeigen.</summary>
+    public int ShowPrivate { get; set; }
 
     // vom ForumCache befüllt
     public List<Forum> Children { get; } = new();
@@ -153,6 +155,7 @@ public sealed class UserRow
     public int AutoSubscribe { get; set; }
     public int PmTotal { get; set; }
     public int PmUnread { get; set; }
+    public int PmPopup { get; set; }
     public long AvatarRevision { get; set; }
     public int HasCustomAvatar { get; set; }
 

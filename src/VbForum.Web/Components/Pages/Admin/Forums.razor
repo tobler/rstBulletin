@@ -74,6 +74,15 @@
                 </div>
                 <div class="field"><label for="fe-o">Position</label><input id="fe-o" type="number" @bind="_edit.DisplayOrder" /></div>
             </div>
+            <div class="field">
+                <label for="fe-sp">Für Gruppen ohne Zugriff</label>
+                <select id="fe-sp" @bind="_edit.ShowPrivate">
+                    <option value="0">Board-Standard (@(_snap.ShowPrivateForums > 0 ? "mit Schloss anzeigen" : "ausblenden"))</option>
+                    <option value="1">Komplett ausblenden</option>
+                    <option value="2">Mit Schloss anzeigen (kein Zugriff)</option>
+                </select>
+                <span class="hint">Wer das Recht „Forum sehen“ nicht hat, sieht das Forum je nach Einstellung gar nicht oder nur als gesperrten Eintrag.</span>
+            </div>
             <div class="field"><label for="fe-l">Weiterleitungs-Link (optional)</label><input id="fe-l" @bind="_edit.Link" placeholder="https://…" /><span class="hint">Macht das Forum zu einem Link auf eine andere Seite.</span></div>
             <div class="stack" style="gap:0">
                 <label class="toggle-row">Kategorie (enthält nur Unterforen, keine Themen)<input type="checkbox" @bind="_edit.IsCategory" /></label>
