@@ -60,9 +60,11 @@ builder.Services.AddSingleton<LegacyLookup>();
 builder.Services.AddHostedService<ForumBackgroundService>();
 builder.Services.AddScoped<CurrentUser>();
 
-builder.Services.AddDataProtection()
-    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(dataPath, "keys")))
-    .SetApplicationName("VbForum");
+builder.Services.AddDataProtection().SetApplicationName("VbForum");
+// Schlüssel in der Datenbank → Anmeldungen überstehen ein Redeploy auch ohne Volume
+builder.Services.AddOptions<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>()
+    .Configure<Db, ILoggerFactory>((o, db, lf) =>
+        o.XmlRepository = new DbKeyRepository(db, Path.Combine(dataPath, "keys"), lf.CreateLogger<DbKeyRepository>()));
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(o =>

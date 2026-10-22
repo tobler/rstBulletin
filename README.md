@@ -101,6 +101,7 @@ shows a maintenance page. The setup does not reopen in that case.
 | `vbf_token` | One-time links (password reset, e-mail confirmation). Only hashes are stored |
 | `vbf_auditlog` | Log of admin and moderation actions |
 | `vbf_asset` | Logo and favicon, so they survive a redeploy without any volume |
+| `vbf_dpkey` | Encryption keys for login cookies, so users stay logged in across redeploys |
 
 The only optional structural change to vB tables: under *Admin › Datenbank & Wartung* you can add FULLTEXT indexes on
 `vb_post.pagetext` and `vb_thread.title` for fast search. With several hundred thousand posts this takes a few minutes
@@ -205,8 +206,9 @@ docker run -d --name rstbulletin -p 8080:8080 \
 ```
 
 - The container listens on port **8080** and runs as a non-root user.
-- `/data` holds the cookie keys and the image cache (logo and favicon are stored in the database). **Keep it on a volume**, otherwise users are logged out on every
-  redeploy.
+- With the `DB_*` environment variables set, the container keeps **no state of its own**. Cookie encryption keys,
+  logo, favicon and all settings live in the database, so a redeploy keeps everyone logged in. A volume on `/data` is
+  optional and only keeps the external-image cache warm.
 - Smilie images from an old vB installation can be mounted read-only to `/app/wwwroot/images/smilies`.
 - Health check: `GET /healthz` returns 200, or 503 when the database is unreachable. The image has a built-in
   `HEALTHCHECK`.
@@ -227,11 +229,11 @@ docker run -d --name rstbulletin -p 8080:8080 \
 This directory contains:
 
 - the DB connection (`dbsettings.json`, unless it comes from environment variables),
-- the cookie encryption keys (`keys/`),
-- the signing key for the image proxy,
-- the image cache.
+- the signing key for the image proxy and the image cache,
+- cookie encryption keys (`keys/`), but only until setup is done. After that they are kept in the database table
+  `vbf_dpkey`.
 
-**Back it up and never commit it.** Without `keys/`, all users are logged out after a restart.
+**Never commit it.** It holds the database password when the connection was entered in the browser.
 
 ## After going live
 
