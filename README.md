@@ -78,7 +78,7 @@ On first start, every request is redirected to `/setup`:
 
 1. **Database:** enter the connection details. This step is skipped when the environment variables are set.
 2. **Install or adopt.** What happens here depends on what the setup finds in the database:
-   - **The database already contains a vBulletin forum** (with the given prefix). Only the four own tables `vbf_*` are
+   - **The database already contains a vBulletin forum** (with the given prefix). Only the own tables `vbf_*` are
      created; the vB tables are not touched. Afterwards you log in with your existing vB administrator account.
    - **The database is empty.** All required tables are created with a vB-4-compatible layout (InnoDB, utf8mb4).
      The setup also creates the default user groups, a first category with one forum, and an administrator account
@@ -100,6 +100,7 @@ shows a maintenance page. The setup does not reopen in that case.
 | `vbf_userauth` | Modern password hashes (PBKDF2), created from the vB hash on first login |
 | `vbf_token` | One-time links (password reset, e-mail confirmation). Only hashes are stored |
 | `vbf_auditlog` | Log of admin and moderation actions |
+| `vbf_asset` | Logo and favicon, so they survive a redeploy without any volume |
 
 The only optional structural change to vB tables: under *Admin › Datenbank & Wartung* you can add FULLTEXT indexes on
 `vb_post.pagetext` and `vb_thread.title` for fast search. With several hundred thousand posts this takes a few minutes
@@ -204,7 +205,7 @@ docker run -d --name rstbulletin -p 8080:8080 \
 ```
 
 - The container listens on port **8080** and runs as a non-root user.
-- `/data` holds the cookie keys, logo and image cache. **Keep it on a volume**, otherwise users are logged out on every
+- `/data` holds the cookie keys and the image cache (logo and favicon are stored in the database). **Keep it on a volume**, otherwise users are logged out on every
   redeploy.
 - Smilie images from an old vB installation can be mounted read-only to `/app/wwwroot/images/smilies`.
 - Health check: `GET /healthz` returns 200, or 503 when the database is unreachable. The image has a built-in
@@ -228,7 +229,6 @@ This directory contains:
 - the DB connection (`dbsettings.json`, unless it comes from environment variables),
 - the cookie encryption keys (`keys/`),
 - the signing key for the image proxy,
-- the uploaded logo,
 - the image cache.
 
 **Back it up and never commit it.** Without `keys/`, all users are logged out after a restart.

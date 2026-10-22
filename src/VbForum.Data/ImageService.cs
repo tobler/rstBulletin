@@ -24,7 +24,7 @@ public static class ImageService
     }
 
     /// <summary>Verkleinert auf maximal <paramref name="max"/> px (längste Seite). Ergebnis JPEG bzw. PNG bei Transparenz.</summary>
-    public static (byte[] Data, int Width, int Height, string Extension)? Resize(byte[] data, int max, bool square = false, int quality = 85)
+    public static (byte[] Data, int Width, int Height, string Extension)? Resize(byte[] data, int max, bool square = false, int quality = 85, bool forcePng = false)
     {
         using var bmp = SKBitmap.Decode(data);
         if (bmp == null) return null;
@@ -38,7 +38,7 @@ public static class ImageService
         }
         double scale = Math.Min(1.0, (double)max / Math.Max(w, h));
         int nw = Math.Max(1, (int)Math.Round(w * scale)), nh = Math.Max(1, (int)Math.Round(h * scale));
-        bool alpha = bmp.AlphaType != SKAlphaType.Opaque;
+        bool alpha = forcePng || bmp.AlphaType != SKAlphaType.Opaque;
         using var surface = SKSurface.Create(new SKImageInfo(nw, nh, SKColorType.Rgba8888, SKAlphaType.Premul));
         var canvas = surface.Canvas;
         canvas.Clear(alpha ? SKColors.Transparent : SKColors.White);

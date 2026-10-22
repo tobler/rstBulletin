@@ -29,6 +29,13 @@ public sealed class Schema(Db db)
               KEY `userid` (`userid`, `type`)
             ) DEFAULT CHARSET=utf8mb4;
 
+            CREATE TABLE IF NOT EXISTS {Tables.OwnAsset} (
+              `name` VARCHAR(40) NOT NULL PRIMARY KEY,
+              `contenttype` VARCHAR(60) NOT NULL,
+              `data` MEDIUMBLOB NOT NULL,
+              `updated` INT UNSIGNED NOT NULL
+            ) DEFAULT CHARSET=utf8mb4;
+
             CREATE TABLE IF NOT EXISTS {Tables.OwnAuditLog} (
               `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
               `dateline` INT UNSIGNED NOT NULL,

@@ -1,4 +1,5 @@
-﻿<!DOCTYPE html>
+@inject BoardCache Cache
+<!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="utf-8" />
@@ -6,7 +7,7 @@
     <base href="/" />
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["app.css"]" />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="@_favicon" />
     <ImportMap />
     <HeadOutlet />
 </head>
@@ -17,3 +18,17 @@
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>
 </html>
+
+@code {
+    private string _favicon = "/favicon.svg";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var f = (await Cache.GetAsync()).Settings.FaviconFile;
+            if (!string.IsNullOrEmpty(f)) _favicon = $"/branding/favicon?v={Uri.EscapeDataString(f)}";
+        }
+        catch { /* DB noch nicht eingerichtet */ }
+    }
+}

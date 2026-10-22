@@ -44,6 +44,7 @@ builder.Services.AddSingleton<MailService>();
 builder.Services.AddSingleton<PostingService>();
 builder.Services.AddSingleton<ModerationService>();
 builder.Services.AddSingleton<UserDeletion>();
+builder.Services.AddSingleton<AssetStore>();
 builder.Services.AddSingleton<SearchService>();
 builder.Services.AddSingleton<ForumAdminService>();
 builder.Services.AddSingleton<AuthService>();

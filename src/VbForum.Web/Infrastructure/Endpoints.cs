@@ -78,16 +78,37 @@ public static class Endpoints
         app.MapGet("/healthz", async (SetupState setup) =>
             await setup.GetAsync() == SetupStatus.DbUnavailable ? Results.StatusCode(503) : Results.Text("ok"));
 
-        app.MapGet("/branding/logo", async (BoardCache cache, ForumPaths paths, HttpContext http) =>
+        app.MapGet("/branding/logo", async (BoardCache cache, AssetStore assets, ForumPaths paths, HttpContext http) =>
         {
             var s = (await cache.GetAsync()).Settings;
             if (string.IsNullOrEmpty(s.LogoFile)) return Results.NotFound();
-            var file = Path.Combine(paths.Branding, Path.GetFileName(s.LogoFile));
-            if (!File.Exists(file)) return Results.NotFound();
-            http.Response.Headers.CacheControl = "public, max-age=3600";
-            http.Response.Headers.ContentSecurityPolicy = "default-src 'none'; style-src 'unsafe-inline'";
-            return Results.File(file, ImageService.ContentType(Path.GetExtension(file).TrimStart('.')));
+            var a = await assets.GetAsync("logo");
+            if (a == null)
+            {
+                // Altbestand: Logo lag früher als Datei im Datenverzeichnis → einmalig in die DB übernehmen
+                var file = Path.Combine(paths.Branding, Path.GetFileName(s.LogoFile));
+                if (!File.Exists(file)) return Results.NotFound();
+                await assets.SetAsync("logo", ImageService.ContentType(Path.GetExtension(file).TrimStart('.')), await File.ReadAllBytesAsync(file));
+                a = await assets.GetAsync("logo");
+                if (a == null) return Results.NotFound();
+            }
+            return AssetResult(http, a);
         });
+
+        // Favicon aus den Einstellungen, sonst das mitgelieferte
+        async Task<IResult> Favicon(BoardCache cache, AssetStore assets, HttpContext http)
+        {
+            try
+            {
+                var s = (await cache.GetAsync()).Settings;
+                if (!string.IsNullOrEmpty(s.FaviconFile) && await assets.GetAsync("favicon") is { } a) return AssetResult(http, a);
+            }
+            catch { /* DB noch nicht eingerichtet */ }
+            http.Response.Headers.CacheControl = "public, max-age=3600";
+            return Results.File(Path.Combine(app.Environment.WebRootPath, "favicon.svg"), "image/svg+xml");
+        }
+        app.MapGet("/branding/favicon", Favicon);
+        app.MapGet("/favicon.ico", Favicon);
 
         app.MapGet("/imgproxy", ImageProxyAsync);
 
@@ -348,6 +369,14 @@ public static class Endpoints
             await File.WriteAllTextAsync(file + ".type", "missing");
             return Results.NotFound();
         }
+    }
+
+    private static IResult AssetResult(HttpContext http, AssetStore.Asset a)
+    {
+        // URL enthält die Version (?v=…) → lange cachen
+        http.Response.Headers.CacheControl = http.Request.Query.ContainsKey("v") ? "public, max-age=31536000, immutable" : "public, max-age=3600";
+        http.Response.Headers.ContentSecurityPolicy = "default-src 'none'; style-src 'unsafe-inline'";
+        return Results.File(a.Data, a.ContentType);
     }
 
     // ---------- Alte vB-URLs ----------

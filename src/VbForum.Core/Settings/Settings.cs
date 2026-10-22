@@ -22,7 +22,10 @@ public sealed class BoardSettings
     public string BoardName { get; set; } = "Forum";
     public string BoardDescription { get; set; } = "";
     public string BaseUrl { get; set; } = "";
+    /// <summary>Version des Logos (Bild selbst liegt in vbf_asset).</summary>
     public string LogoFile { get; set; } = "";
+    /// <summary>Version des Favicons (Bild selbst liegt in vbf_asset).</summary>
+    public string FaviconFile { get; set; } = "";
     public string TimeZone { get; set; } = "Europe/Berlin";
 
     public bool BoardOffline { get; set; }
