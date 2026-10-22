@@ -43,7 +43,7 @@ h1:focus, h1:focus-visible { outline: none; }
 
 /* ---------- Kopf ---------- */
 .site-header { background: var(--card); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 20; }
-.container { max-width: 1120px; margin: 0 auto; padding-left: 24px; padding-right: 24px; }
+.container { max-width: none; margin: 0 auto; padding-left: 24px; padding-right: 24px; }
 .site-header .container { padding-top: 10px; padding-bottom: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); min-height: 44px; }
 .brand:hover { color: var(--ink); }
