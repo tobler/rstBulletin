@@ -6,6 +6,19 @@ using VbForum.Data;
 using VbForum.Web.Components;
 using VbForum.Web.Infrastructure;
 
+// Docker-HEALTHCHECK: "dotnet VbForum.Web.dll --healthcheck" fragt /healthz ab (im aspnet-Image gibt es kein curl)
+if (args.Contains("--healthcheck"))
+{
+    var port = Environment.GetEnvironmentVariable("ASPNETCORE_HTTP_PORTS")?.Split(';', ',')[0] ?? "8080";
+    try
+    {
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(4) };
+        var r = await http.GetAsync($"http://127.0.0.1:{port}/healthz");
+        return r.IsSuccessStatusCode ? 0 : 1;
+    }
+    catch { return 1; }
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 var dataPath = builder.Configuration["VbForum:DataPath"] is { Length: > 0 } dp
@@ -128,4 +141,5 @@ app.MapForumEndpoints();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-app.Run();
+await app.RunAsync();
+return 0;

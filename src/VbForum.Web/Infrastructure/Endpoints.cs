@@ -74,6 +74,10 @@ public static class Endpoints
             return Results.File(av.Value.Data, ImageService.ContentType(info?.Extension ?? "gif"), entityTag: etag);
         });
 
+        // Für Docker/Load-Balancer: 200 = läuft und DB erreichbar (oder noch nicht eingerichtet), 503 = DB weg
+        app.MapGet("/healthz", async (SetupState setup) =>
+            await setup.GetAsync() == SetupStatus.DbUnavailable ? Results.StatusCode(503) : Results.Text("ok"));
+
         app.MapGet("/branding/logo", async (BoardCache cache, ForumPaths paths, HttpContext http) =>
         {
             var s = (await cache.GetAsync()).Settings;

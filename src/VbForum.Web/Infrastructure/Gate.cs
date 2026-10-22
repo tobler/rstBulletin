@@ -39,6 +39,7 @@ public sealed class ForumGateMiddleware(RequestDelegate next)
     public async Task InvokeAsync(HttpContext ctx, SetupState setup, BoardCache cache, UserRepository users)
     {
         var path = ctx.Request.Path;
+        if (path.StartsWithSegments("/healthz")) { await next(ctx); return; }
         var status = await setup.GetAsync();
         if (status is SetupStatus.NeedsConnection or SetupStatus.NeedsInstall)
         {

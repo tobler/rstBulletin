@@ -192,8 +192,26 @@ server {
 
 ### Docker
 
-There is no image yet. The environment variables above work the same way. Mount a volume for the data path
-(`VbForum__DataPath`).
+```bash
+docker build -t rstbulletin .
+# from an Apple Silicon Mac for an x64 server:
+docker build --platform linux/amd64 -t rstbulletin .
+
+docker run -d --name rstbulletin -p 8080:8080 \
+  -e DB_HOST=db.example.local -e DB_USER=forum -e DB_PASSWORD=secret -e DB_DATABASE=forum \
+  -v rstbulletin-data:/data \
+  rstbulletin
+```
+
+- The container listens on port **8080** and runs as a non-root user.
+- `/data` holds the cookie keys, logo and image cache. **Keep it on a volume**, otherwise users are logged out on every
+  redeploy.
+- Smilie images from an old vB installation can be mounted read-only to `/app/wwwroot/images/smilies`.
+- Health check: `GET /healthz` returns 200, or 503 when the database is unreachable. The image has a built-in
+  `HEALTHCHECK`.
+- Put it behind a reverse proxy that passes WebSocket upgrades and `X-Forwarded-For`/`X-Forwarded-Proto` (see the nginx
+  example above).
+- `docker-compose.example.yml` shows the forum together with a MariaDB container.
 
 ### Windows (IIS)
 

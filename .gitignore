@@ -5,3 +5,4 @@ obj/
 # Laufzeitdaten: DB-Zugang, Schlüssel, Logo, Bild-Cache – nie einchecken
 **/App_Data/
 publish/
+.idea/

@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/App_Data/
+.git/
+.idea/
+.vs/
+publish/
+tests/
+tools/
+*.md
+!README.md

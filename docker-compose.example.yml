@@ -1,0 +1,41 @@
+# Beispiel: rstBulletin + MariaDB. Kopieren nach docker-compose.yml und Passwörter anpassen.
+services:
+  forum:
+    image: rstbulletin:latest
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_USER: forum
+      DB_PASSWORD: change-me
+      DB_DATABASE: forum
+      # DB_TABLE_PREFIX: vb_
+    volumes:
+      - forum-data:/data
+      # Smilie-Bilder aus der alten vB-Installation (optional)
+      # - ./smilies:/app/wwwroot/images/smilies:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mariadb:11.4
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: forum
+      MARIADB_USER: forum
+      MARIADB_PASSWORD: change-me
+      MARIADB_ROOT_PASSWORD: change-me-too
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      retries: 10
+
+volumes:
+  forum-data:
+  db-data:
