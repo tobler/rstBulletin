@@ -8,6 +8,13 @@
             <a role="menuitem" href="/search?user=@Uri.EscapeDataString(Name)"><Icon Name="search" Size="16" />Beiträge suchen</a>
             <a role="menuitem" href="/admin/users/@UserId"><Icon Name="settings" Size="16" />Benutzer bearbeiten</a>
             <a role="menuitem" href="/admin/users/@UserId#delete" class="danger"><Icon Name="trash" Size="16" />Benutzer löschen …</a>
+            <form method="post" action="/admin/users/@UserId/quickdelete" class="user-menu-form">
+                <AntiforgeryToken />
+                <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+                <button type="submit" role="menuitem" class="danger" title="Ohne Rückfrage löschen – Beiträge und Nachrichten bleiben als „Gelöschter User“ erhalten">
+                    <Icon Name="x" Size="16" />Sofort löschen
+                </button>
+            </form>
         </div>
     </details>
 }
@@ -21,6 +28,9 @@ else
 }
 
 @code {
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+    private string ReturnUrl => "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('#')[0];
+
     [Parameter] public long UserId { get; set; }
     [Parameter] public string Name { get; set; } = "";
     [Parameter] public bool IsAdmin { get; set; }

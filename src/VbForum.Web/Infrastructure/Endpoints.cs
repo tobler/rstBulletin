@@ -297,6 +297,23 @@ public static class Endpoints
             return Back(http, p.PostId == t.FirstPostId && action == "delete" ? $"/forum/{t.ForumId}" : $"/thread/{t.ThreadId}");
         });
 
+        // Schnelllöschung aus dem Benutzermenü (nur Admins): ohne Rückfrage, Beiträge/Nachrichten bleiben als „Gelöschter User“
+        app.MapPost("/admin/users/{id:long}/quickdelete", async (long id, HttpContext http, UserRepository users, UserDeletion deletion,
+            BoardCache cache, TokenRepository audit) =>
+        {
+            var me = await http.ForumUserAsync();
+            if (!me.IsAdmin) return Results.StatusCode(403);
+            var row = await users.GetAsync(id);
+            if (row == null) return Back(http, "/");
+            // Eigenes Konto und andere Administratoren nur bewusst über die Benutzerverwaltung
+            if (id == me.UserId || ForumUser.From(row, await cache.GetAsync()).IsAdmin)
+                return Results.LocalRedirect($"/admin/users/{id}#delete");
+            await deletion.DeleteAsync(id, deleteContent: false);
+            await audit.LogAsync(me, "user.quickdelete", $"{id} {row.DisplayName}", http.ClientIp());
+            cache.Invalidate();
+            return Back(http, "/");
+        }).RequireAuthorization("Admin");
+
         app.MapPost("/account/avatar", async (HttpContext http, IFormFile? file, [FromForm] string? remove, UserRepository users, BoardCache cache) =>
         {
             var u = await http.ForumUserAsync();

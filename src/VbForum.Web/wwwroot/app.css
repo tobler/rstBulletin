@@ -340,6 +340,10 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .user-menu-pop a { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 7px; color: var(--ink); text-decoration: none; font-weight: 500; font-size: 14px; white-space: nowrap; }
 .user-menu-pop a:hover { background: var(--head); }
 .user-menu-pop a.danger { color: var(--danger); }
+.user-menu-form { margin: 0; border-top: 1px solid var(--border-soft); margin-top: 4px; padding-top: 4px; }
+.user-menu-pop button { all: unset; box-sizing: border-box; width: 100%; display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 7px; font-weight: 600; font-size: 14px; cursor: pointer; white-space: nowrap; }
+.user-menu-pop button.danger { color: var(--danger); }
+.user-menu-pop button:hover, .user-menu-pop button:focus-visible { background: var(--head); }
 
 /* Admin-Bereich: volle Bildschirmbreite (viele breite Tabellen) */
 main.container:has(> .side-layout.admin-shell),
@@ -355,3 +359,5 @@ body:has(.admin-shell) .site-footer .container { max-width: none; }
 .announcement-row { background: var(--accent-soft); }
 .announce-icon { width: 36px; height: 36px; flex: 0 0 36px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; }
 .announcement-body { font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
+/* Aufgeklapptes Benutzermenü nicht vom Kasten abschneiden lassen */
+.card:has(.user-menu[open]), .post:has(.user-menu[open]), .table-wrap:has(.user-menu[open]) { overflow: visible; }
