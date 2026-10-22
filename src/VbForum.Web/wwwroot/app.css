@@ -268,7 +268,12 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .perm-grid th, .perm-grid td { text-align: center; }
 .perm-grid td:first-child, .perm-grid th:first-child { text-align: left; position: sticky; left: 0; background: var(--card); z-index: 1; min-width: 150px; box-shadow: 1px 0 0 var(--border-soft); }
 .perm-grid th:first-child { background: var(--head); }
-.perm-grid th { white-space: normal; font-size: 11px; min-width: 64px; }
+.perm-grid th { white-space: normal; font-size: 10.5px; letter-spacing: .02em; padding: 8px 4px; }
+/* Rechte-Spalten: senkrechte Überschriften, damit die Matrix ohne Querscrollen passt */
+.perm-grid thead th.rot { vertical-align: bottom; min-width: 40px; width: 40px; padding: 10px 2px; }
+.perm-grid thead th.rot span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; display: inline-block; max-height: 150px; text-align: left; }
+.perm-grid .perm-src { min-width: 110px; max-width: 170px; text-align: left; }
+.perm-grid td:last-child { white-space: nowrap; }
 .perm-grid td { padding: 8px 6px; }
 .perm-cell { display: inline-flex; width: 34px; height: 30px; align-items: center; justify-content: center; border-radius: 6px; border: 1px solid var(--input-border); background: var(--card); cursor: pointer; font-weight: 700; }
 .perm-cell.yes { background: var(--ok-bg); color: var(--ok-fg); border-color: transparent; }
@@ -335,3 +340,13 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .user-menu-pop a { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 7px; color: var(--ink); text-decoration: none; font-weight: 500; font-size: 14px; white-space: nowrap; }
 .user-menu-pop a:hover { background: var(--head); }
 .user-menu-pop a.danger { color: var(--danger); }
+
+/* Admin-Bereich: volle Bildschirmbreite (viele breite Tabellen) */
+main.container:has(> .side-layout.admin-shell),
+main.container:has(.admin-shell),
+body:has(.admin-shell) .site-header .container,
+body:has(.admin-shell) .site-footer .container { max-width: none; }
+@media (min-width: 900px) {
+  .admin-shell { flex-wrap: nowrap; }
+  .admin-shell > .side-nav { flex: 0 0 220px; position: sticky; top: 16px; }
+}

@@ -23,7 +23,7 @@
                         <thead>
                             <tr>
                                 <th>Gruppe</th>
-                                @foreach (var (perm, label) in Columns) { <th title="@label" style="white-space:normal;min-width:70px;font-size:11px">@label</th> }
+                                @foreach (var (perm, label) in Columns) { <th class="rot" title="@label"><span>@label</span></th> }
                                 <th>Herkunft</th>
                                 <th></th>
                             </tr>
@@ -52,7 +52,7 @@
                                             }
                                         </td>
                                     }
-                                    <td class="small muted nowrap">@(src == _forum.ForumId ? "dieses Forum" : src > 0 ? $"geerbt von {_snap.Forum(src)?.DisplayTitle}" : "Gruppenstandard")</td>
+                                    <td class="small muted perm-src">@(src == _forum.ForumId ? "dieses Forum" : src > 0 ? $"geerbt von {_snap.Forum(src)?.DisplayTitle}" : "Gruppenstandard")</td>
                                     <td class="nowrap">
                                         @if (editing)
                                         {
