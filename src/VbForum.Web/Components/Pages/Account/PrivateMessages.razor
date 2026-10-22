@@ -48,7 +48,7 @@
                 </div>
                 <div class="row small muted">
                     <Avatar UserId="_pm.FromUserId" Name="@HtmlUtil.CleanTitle(_pm.FromUsername)" Size="32" />
-                    <span>Von <strong style="color:var(--ink)">@HtmlUtil.CleanTitle(_pm.FromUsername)</strong> an @string.Join(", ", PmRepository.Recipients(_pm.ToUserArray)) · @ForumTime.Full(_pm.Dateline)</span>
+                    <span>Von <strong style="color:var(--ink)"><UserName UserId="_pm.FromUserId" Name="@HtmlUtil.CleanTitle(_pm.FromUsername)" IsAdmin="_user!.IsAdmin" /></strong> an @string.Join(", ", PmRepository.Recipients(_pm.ToUserArray)) · @ForumTime.Full(_pm.Dateline)</span>
                 </div>
                 <div class="post-body">@_body</div>
                 <div class="post-actions">

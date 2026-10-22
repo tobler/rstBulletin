@@ -1,0 +1,28 @@
+@* Benutzername; für Administratoren mit Aufklappmenü (Profil, bearbeiten, löschen). Funktioniert ohne JavaScript. *@
+@if (IsAdmin && UserId > 0)
+{
+    <details class="user-menu">
+        <summary class="@Class" title="Aktionen für @Name">@Name</summary>
+        <div class="user-menu-pop" role="menu">
+            <a role="menuitem" href="@Links.User(UserId, Name)"><Icon Name="user" Size="16" />Profil ansehen</a>
+            <a role="menuitem" href="/search?user=@Uri.EscapeDataString(Name)"><Icon Name="search" Size="16" />Beiträge suchen</a>
+            <a role="menuitem" href="/admin/users/@UserId"><Icon Name="settings" Size="16" />Benutzer bearbeiten</a>
+            <a role="menuitem" href="/admin/users/@UserId#delete" class="danger"><Icon Name="trash" Size="16" />Benutzer löschen …</a>
+        </div>
+    </details>
+}
+else if (UserId > 0)
+{
+    <a class="@Class" href="@Links.User(UserId, Name)">@Name</a>
+}
+else
+{
+    <span class="@Class">@Name</span>
+}
+
+@code {
+    [Parameter] public long UserId { get; set; }
+    [Parameter] public string Name { get; set; } = "";
+    [Parameter] public bool IsAdmin { get; set; }
+    [Parameter] public string? Class { get; set; }
+}

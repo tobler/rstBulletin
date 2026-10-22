@@ -156,7 +156,7 @@
                     <div class="post-author">
                         @if (a != null)
                         {
-                            <a class="name" href="@Links.User(a.UserId, a.DisplayName)">@a.DisplayName</a>
+                            <UserName Class="name" UserId="a.UserId" Name="@a.DisplayName" IsAdmin="_user.IsAdmin" />
                             <span class="rank">@Rank(a)</span>
                             <span>Dabei seit @ForumTime.Local(a.JoinDate).Year</span>
                             <span>@ForumTime.Number(a.Posts) @(a.Posts == 1 ? "Beitrag" : "Beiträge")</span>
@@ -164,7 +164,7 @@
                         else
                         {
                             <span class="name">@HtmlUtil.CleanTitle(p.Username)</span>
-                            <span class="rank">Gast</span>
+                            <span class="rank">@(HtmlUtil.CleanTitle(p.Username) == UserRepository.DeletedUserName ? "Konto gelöscht" : "Gast")</span>
                         }
                     </div>
                 </aside>

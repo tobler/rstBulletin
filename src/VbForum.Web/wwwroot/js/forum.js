@@ -122,3 +122,13 @@
     if (window.Blazor && Blazor.addEventListener) Blazor.addEventListener('enhancedload', function () { start(); poll(); });
   });
 })();
+
+// Benutzer-Aufklappmenü: bei Klick daneben oder Escape schließen
+(function () {
+  document.addEventListener('click', function (e) {
+    document.querySelectorAll('details.user-menu[open]').forEach(function (d) { if (!d.contains(e.target)) d.removeAttribute('open'); });
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') document.querySelectorAll('details.user-menu[open]').forEach(function (d) { d.removeAttribute('open'); });
+  });
+})();

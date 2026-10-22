@@ -321,3 +321,17 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
   .card-pad { padding: 16px; }
   .hide-mobile { display: none !important; }
 }
+
+/* Benutzer-Aufklappmenü (nur für Administratoren) */
+.user-menu { position: relative; display: inline-block; }
+.user-menu > summary { cursor: pointer; list-style: none; color: var(--accent); font-weight: 600; }
+.user-menu > summary::-webkit-details-marker { display: none; }
+.user-menu > summary::after { content: " ▾"; font-size: .8em; color: var(--muted); }
+.user-menu-pop {
+  position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; min-width: 210px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.14);
+  padding: 6px; display: flex; flex-direction: column;
+}
+.user-menu-pop a { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 7px; color: var(--ink); text-decoration: none; font-weight: 500; font-size: 14px; white-space: nowrap; }
+.user-menu-pop a:hover { background: var(--head); }
+.user-menu-pop a.danger { color: var(--danger); }

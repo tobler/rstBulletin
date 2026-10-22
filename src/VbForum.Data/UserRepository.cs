@@ -295,13 +295,22 @@ public sealed class UserRepository(Db db)
         }
     }
 
-    /// <summary>Löscht ein Konto. Beiträge bleiben als Gastbeiträge (userid = 0) mit Namen erhalten – wie in vB.</summary>
+    public const string DeletedUserName = "Gelöschter User";
+
+    /// <summary>
+    /// Löscht ein Konto. Verbleibende Beiträge werden Gastbeiträge (userid = 0) mit dem Namen „Gelöschter User“ –
+    /// auch in Themen-/Forenübersichten und bei gesendeten privaten Nachrichten.
+    /// </summary>
     public async Task DeleteAsync(long userId)
     {
         await using var c = await db.OpenAsync();
-        await c.ExecuteAsync($"UPDATE {T.Post} SET userid = 0 WHERE userid = @userId", new { userId }, commandTimeout: 600);
-        await c.ExecuteAsync($"UPDATE {T.Thread} SET postuserid = 0 WHERE postuserid = @userId", new { userId });
-        await c.ExecuteAsync($"UPDATE {T.Thread} SET lastposterid = 0 WHERE lastposterid = @userId", new { userId });
+        var name = VbText.ForStorage(HtmlUtil.ToVbStoredTitle(DeletedUserName));
+        var p = new { userId, name };
+        await c.ExecuteAsync($"UPDATE {T.Post} SET userid = 0, username = @name WHERE userid = @userId", p, commandTimeout: 600);
+        await c.ExecuteAsync($"UPDATE {T.Thread} SET postuserid = 0, postusername = @name WHERE postuserid = @userId", p, commandTimeout: 600);
+        await c.ExecuteAsync($"UPDATE {T.Thread} SET lastposterid = 0, lastposter = @name WHERE lastposterid = @userId", p, commandTimeout: 600);
+        await c.ExecuteAsync($"UPDATE {T.Forum} SET lastposterid = 0, lastposter = @name WHERE lastposterid = @userId", p);
+        await c.ExecuteAsync($"UPDATE {T.PmText} SET fromuserid = 0, fromusername = @name WHERE fromuserid = @userId", p, commandTimeout: 600);
         foreach (var t in new[] { T.UserField, T.UserTextField, T.CustomAvatar, T.SubscribeThread, T.ThreadRead, T.ForumRead, T.Moderator, T.UserBan, T.Administrator, Tables.OwnUserAuth, Tables.OwnToken })
             await c.ExecuteAsync($"DELETE FROM {t} WHERE userid = @userId", new { userId });
         var pmTexts = (await c.QueryAsync<long>($"SELECT pmtextid FROM {T.Pm} WHERE userid = @userId", new { userId })).ToList();
@@ -309,6 +318,14 @@ public sealed class UserRepository(Db db)
         if (pmTexts.Count > 0)
             await c.ExecuteAsync($"DELETE FROM {T.PmText} WHERE pmtextid IN @pmTexts AND NOT EXISTS (SELECT 1 FROM {T.Pm} p WHERE p.pmtextid = {T.PmText}.pmtextid)", new { pmTexts });
         await c.ExecuteAsync($"DELETE FROM {T.User} WHERE userid = @userId", new { userId });
+    }
+
+    /// <summary>Anzahl Beiträge und eröffneter Themen (für die Rückfrage beim Löschen).</summary>
+    public async Task<(long Posts, long Threads)> ContentCountAsync(long userId)
+    {
+        await using var c = await db.OpenAsync();
+        return (await c.ExecuteScalarAsync<long>($"SELECT COUNT(*) FROM {T.Post} WHERE userid = @userId", new { userId }),
+                await c.ExecuteScalarAsync<long>($"SELECT COUNT(*) FROM {T.Thread} WHERE postuserid = @userId AND open <> 10", new { userId }));
     }
 
     public async Task BanAsync(long userId, int bannedGroupId, long adminId, string reason, long liftDate)
