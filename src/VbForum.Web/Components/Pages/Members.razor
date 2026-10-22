@@ -25,7 +25,7 @@
                 <div class="stack" style="gap:4px">
                     <h1 style="font-size:24px">@_profile.DisplayName</h1>
                     <span class="muted small">
-                        @GroupTitle(_profile.UserGroupId) · Mitglied seit @ForumTime.Date(_profile.JoinDate) · @ForumTime.Number(_profile.Posts) Beiträge · zuletzt aktiv @ForumTime.Relative(_profile.LastActivity)
+                        @GroupTitle(_profile.UserGroupId) · Mitglied seit @ForumTime.Date(_profile.JoinDate) · @ForumTime.Number(_profile.Posts) @(_profile.Posts == 1 ? "Beitrag" : "Beiträge") · zuletzt aktiv @ForumTime.Relative(_profile.LastActivity)
                     </span>
                     @if (!string.IsNullOrWhiteSpace(_profile.Homepage)) { <a class="small" href="@VbForum.Core.BbCode.BbCodeRenderer.SafeUrl(_profile.Homepage)" rel="nofollow ugc noopener" target="_blank">@_profile.Homepage</a> }
                     @foreach (var (k, v) in _fields.Where(f => !string.IsNullOrWhiteSpace(f.Value)))

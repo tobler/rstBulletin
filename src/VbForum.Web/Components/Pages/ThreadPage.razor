@@ -159,7 +159,7 @@
                             <a class="name" href="@Links.User(a.UserId, a.DisplayName)">@a.DisplayName</a>
                             <span class="rank">@Rank(a)</span>
                             <span>Dabei seit @ForumTime.Local(a.JoinDate).Year</span>
-                            <span>@ForumTime.Number(a.Posts) Beiträge</span>
+                            <span>@ForumTime.Number(a.Posts) @(a.Posts == 1 ? "Beitrag" : "Beiträge")</span>
                         }
                         else
                         {

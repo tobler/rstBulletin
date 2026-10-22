@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
-using VbForum.Core.Security;
 using VbForum.Data;
 using VbForum.Web.Components;
 using VbForum.Web.Infrastructure;
@@ -40,7 +39,8 @@ builder.Services.AddSingleton<PostRenderer>();
 builder.Services.AddSingleton<ViewCounter>();
 builder.Services.AddSingleton<LoginThrottle>();
 builder.Services.AddSingleton<MaintenanceJobs>();
-builder.Services.AddSingleton<SetupToken>();
+builder.Services.AddSingleton<SetupState>();
+builder.Services.AddSingleton<Installer>();
 builder.Services.AddHostedService<ForumBackgroundService>();
 builder.Services.AddScoped<CurrentUser>();
 
@@ -84,18 +84,21 @@ builder.Services.AddServerSideBlazor().AddHubOptions(o => o.MaximumReceiveMessag
 
 var app = builder.Build();
 
-// Eigene Tabellen anlegen, sobald die DB eingerichtet ist
-var db = app.Services.GetRequiredService<Db>();
-if (db.IsConfigured)
+// Status beim Start ins Log schreiben; eigene Tabellen bei bestehender Einrichtung nachziehen
+var store = app.Services.GetRequiredService<DbSettingsStore>();
+var status = await app.Services.GetRequiredService<SetupState>().GetAsync();
+switch (status)
 {
-    try { await app.Services.GetRequiredService<Schema>().EnsureOwnTablesAsync(); }
-    catch (Exception ex) { app.Logger.LogError(ex, "Datenbank nicht erreichbar – bitte unter /setup bzw. /admin/database prüfen."); }
-}
-else
-{
-    var token = VbPassword.RandomToken(12);
-    app.Services.GetRequiredService<SetupToken>().Value = token;
-    app.Logger.LogWarning("Noch keine Datenbank eingerichtet. Einrichtung unter /setup mit diesem Einrichtungs-Code: {Token}", token);
+    case SetupStatus.Ready:
+        await app.Services.GetRequiredService<Schema>().EnsureOwnTablesAsync();
+        break;
+    case SetupStatus.DbUnavailable:
+        app.Logger.LogError("Datenbank {Server}:{Port}/{Database} nicht erreichbar ({Source}).", store.Current.Server, store.Current.Port,
+            store.Current.Database, store.FromEnv ? "Umgebungsvariablen" : "dbsettings.json");
+        break;
+    default:
+        app.Logger.LogWarning("Forum ist noch nicht eingerichtet – bitte /setup im Browser aufrufen.");
+        break;
 }
 
 app.UseForwardedHeaders();

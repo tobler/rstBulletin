@@ -1,133 +1,199 @@
 @page "/setup"
 @layout SetupLayout
+@rendermode InteractiveServer
 @inject DbSettingsStore Store
-@inject SetupToken SetupCode
-@inject Schema Schema
+@inject SetupState State
+@inject Installer Installer
 @inject BoardCache Cache
 @inject NavigationManager Nav
-@inject IServiceProvider Services
 
 <PageTitle>Einrichtung</PageTitle>
 
 <main class="page container" style="align-items:center">
-    <div class="stack" style="width:min(560px,100%)">
-        <div class="page-head"><div><h1>Einrichtung</h1><p>Verbindung zur bestehenden vBulletin-Datenbank herstellen.</p></div></div>
+    <div class="stack" style="width:min(600px,100%)">
+        <div class="page-head"><div><h1>Einrichtung</h1><p>@Subtitle</p></div></div>
 
-        @if (_blocked)
+        @if (_error != null) { <div class="alert alert-err" role="alert" style="white-space:pre-line">@_error</div> }
+        @if (_ok != null) { <div class="alert alert-ok" role="status">@_ok</div> }
+
+        @if (_status is null)
+        {
+            <div class="card card-pad muted">Prüfe Datenbank …</div>
+        }
+        else if (_status == SetupStatus.Ready)
         {
             <div class="card card-pad stack" style="gap:10px">
-                <p style="margin:0">Die Datenbank ist bereits eingerichtet. Änderungen nimmst du im Admin-Bereich unter <a href="/admin/database">Datenbank</a> vor.</p>
+                <p style="margin:0">Das Forum ist bereits eingerichtet.</p>
                 <p style="margin:0"><a class="btn" href="/">Zum Forum</a></p>
             </div>
         }
-        else
+        else if (_status == SetupStatus.DbUnavailable)
         {
-            <EditForm Model="Input" FormName="setup" OnSubmit="SubmitAsync" class="card card-pad stack" Enhance>
-                @if (_error != null) { <div class="alert alert-err" role="alert" style="white-space:pre-line">@_error</div> }
-                @if (_ok != null) { <div class="alert alert-ok" role="status">@_ok</div> }
-                @if (_needsCode)
+            <div class="card card-pad">Die hinterlegte Datenbank ist nicht erreichbar. Bitte Datenbankserver bzw. Zugangsdaten prüfen und die Anwendung neu starten.</div>
+        }
+        else if (_status == SetupStatus.NeedsConnection)
+        {
+            @* Schritt 1: Verbindung *@
+            <section class="card card-pad stack">
+                <h2 class="card-title">1. Datenbank</h2>
+                <div class="form-grid">
+                    <div class="field"><label for="s-host">Server</label><input id="s-host" @bind="_db.Server" /></div>
+                    <div class="field"><label for="s-port">Port</label><input id="s-port" type="number" @bind="_db.Port" /></div>
+                    <div class="field"><label for="s-db">Datenbank</label><input id="s-db" @bind="_db.Database" /></div>
+                    <div class="field"><label for="s-prefix">Tabellen-Präfix</label><input id="s-prefix" @bind="_db.TablePrefix" /><span class="hint">Bei bestehendem vBulletin meist „vb_“ (steht in der config.php).</span></div>
+                    <div class="field"><label for="s-user">Benutzer</label><input id="s-user" @bind="_db.User" autocomplete="off" /></div>
+                    <div class="field"><label for="s-pw">Passwort</label><input id="s-pw" type="password" @bind="_db.Password" autocomplete="new-password" /></div>
+                </div>
+                <label class="check"><input type="checkbox" @bind="_db.UseSsl" />SSL-Verbindung erzwingen</label>
+                <p class="small muted" style="margin:0">Tipp: Die Verbindung kann auch über die Umgebungsvariablen DB_HOST, DB_PORT, DB_USER, DB_PASSWORD und DB_DATABASE vorgegeben werden – dann entfällt dieser Schritt.</p>
+                <div class="form-actions">
+                    <button type="button" class="btn" @onclick="TestAsync" disabled="@_busy">Verbindung testen</button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveConnectionAsync" disabled="@_busy">Weiter</button>
+                </div>
+            </section>
+        }
+        else if (_info != null)
+        {
+            @* Schritt 2: Übernehmen oder neu installieren *@
+            <section class="card card-pad stack">
+                <h2 class="card-title">@(_info.HasForumTables ? "2. Bestehendes Forum übernehmen" : "2. Neues Forum anlegen")</h2>
+                <p class="small muted" style="margin:0">
+                    Datenbank <strong>@Store.Current.Database</strong> auf @Store.Current.Server:@Store.Current.Port, Präfix „@Store.Current.TablePrefix“
+                    @(Store.FromEnv ? " (aus Umgebungsvariablen)" : "")
+                </p>
+                @if (_info.HasForumTables)
                 {
-                    <div class="field">
-                        <label for="s-code">Einrichtungs-Code</label>
-                        <InputText id="s-code" @bind-Value="Input!.Code" autocomplete="off" />
-                        <span class="hint">Steht beim Start der Anwendung im Log („Einrichtungs-Code“). Schützt die Einrichtung vor Fremden.</span>
+                    <div class="alert alert-info small">
+                        Gefunden: @ForumTime.Number(_info.Users) Benutzer, @ForumTime.Number(_info.Threads) Themen, @ForumTime.Number(_info.Posts) Beiträge.
+                        Bestehende Tabellen werden <strong>nicht</strong> verändert; angelegt werden nur die eigenen Tabellen vbf_setting, vbf_userauth, vbf_token und vbf_auditlog.
+                        Danach meldest du dich mit deinem bisherigen Administratorkonto an.
                     </div>
                 }
-                <div class="form-grid">
-                    <div class="field"><label for="s-host">Server</label><InputText id="s-host" @bind-Value="Input!.Server" /></div>
-                    <div class="field"><label for="s-port">Port</label><InputNumber id="s-port" @bind-Value="Input.Port" /></div>
-                    <div class="field"><label for="s-db">Datenbank</label><InputText id="s-db" @bind-Value="Input.Database" /></div>
-                    <div class="field"><label for="s-prefix">Tabellen-Präfix</label><InputText id="s-prefix" @bind-Value="Input.TablePrefix" /><span class="hint">Meist „vb_“ – steht in der vB-config.php.</span></div>
-                    <div class="field"><label for="s-user">Benutzer</label><InputText id="s-user" @bind-Value="Input.User" autocomplete="off" /></div>
-                    <div class="field"><label for="s-pw">Passwort</label><InputText id="s-pw" type="password" @bind-Value="Input.Password" autocomplete="new-password" /></div>
-                </div>
-                <label class="check"><InputCheckbox @bind-Value="Input.UseSsl" />SSL-Verbindung erzwingen</label>
-                <div class="field">
-                    <label for="s-admin">Board-Name</label>
-                    <InputText id="s-admin" @bind-Value="Input.BoardName" />
-                </div>
-                <div class="alert alert-info small">Es werden <strong>keine</strong> vBulletin-Tabellen verändert. Angelegt werden nur vier eigene Tabellen (vbf_setting, vbf_userauth, vbf_token, vbf_auditlog). Danach meldest du dich mit deinem bestehenden vB-Administratorkonto an.</div>
+                else
+                {
+                    <div class="alert alert-info small">Die Datenbank enthält noch kein Forum. Es werden alle Tabellen (vBulletin-4-kompatibel), die Standardgruppen und eine erste Kategorie mit Forum angelegt.</div>
+                    <div class="form-grid">
+                        <div class="field"><label for="a-name">Administrator – Benutzername</label><input id="a-name" @bind="_admin.AdminName" maxlength="50" autocomplete="off" /></div>
+                        <div class="field"><label for="a-mail">E-Mail</label><input id="a-mail" type="email" @bind="_admin.AdminEmail" /></div>
+                        <div class="field"><label for="a-pw">Passwort</label><input id="a-pw" type="password" @bind="_admin.AdminPassword" autocomplete="new-password" /><span class="hint">Mindestens 8 Zeichen.</span></div>
+                        <div class="field"><label for="a-pw2">Passwort wiederholen</label><input id="a-pw2" type="password" @bind="_pw2" autocomplete="new-password" /></div>
+                    </div>
+                }
+                <div class="field"><label for="b-name">Name des Forums</label><input id="b-name" @bind="_boardName" maxlength="100" /></div>
                 <div class="form-actions">
-                    <button type="submit" name="Input.Action" value="test" class="btn">Verbindung testen</button>
-                    <button type="submit" name="Input.Action" value="save" class="btn btn-primary">Speichern und starten</button>
+                    @if (!Store.FromEnv) { <button type="button" class="btn" @onclick="BackAsync" disabled="@_busy">Zurück</button> }
+                    <button type="button" class="btn btn-primary" @onclick="FinishAsync" disabled="@_busy">@(_busy ? "Bitte warten …" : _info.HasForumTables ? "Übernehmen und starten" : "Forum anlegen")</button>
                 </div>
-            </EditForm>
+            </section>
         }
     </div>
 </main>
 
 @code {
-    public sealed class SetupInput
-    {
-        public string Code { get; set; } = "";
-        public string Server { get; set; } = "localhost";
-        public int Port { get; set; } = 3306;
-        public string Database { get; set; } = "";
-        public string User { get; set; } = "";
-        public string Password { get; set; } = "";
-        public string TablePrefix { get; set; } = "vb_";
-        public bool UseSsl { get; set; }
-        public string BoardName { get; set; } = "Forum";
-        public string Action { get; set; } = "";
-    }
-
-    [CascadingParameter] public HttpContext HttpContext { get; set; } = default!;
-    [SupplyParameterFromForm] public SetupInput? Input { get; set; }
-
-    private bool _blocked, _needsCode;
+    private SetupStatus? _status;
+    private Installer.ExistingInfo? _info;
+    private DbSettings _db = new();
+    private readonly Installer.NewInstall _admin = new();
+    private string _pw2 = "", _boardName = "Forum";
     private string? _error, _ok;
+    private bool _busy;
 
-    protected override async Task OnInitializedAsync()
+    private string Subtitle => _status switch
     {
-        Input ??= new SetupInput();
-        // Einrichtung nur, solange keine funktionierende Verbindung existiert (oder die DB nicht erreichbar ist)
-        if (Store.Current.IsConfigured)
-        {
-            var test = await Db.TestAsync(Store.Current);
-            _blocked = test.Ok;
-            if (!_blocked)
-            {
-                _error = "Die gespeicherte Verbindung funktioniert nicht:\n" + test.Message;
-                var s = Store.Current;
-                if (HttpContext.Request.Method == "GET")
-                    Input = new SetupInput { Server = s.Server, Port = s.Port, Database = s.Database, User = s.User, TablePrefix = s.TablePrefix, UseSsl = s.UseSsl };
-            }
-        }
-        // Code ist nötig, wenn er beim Start erzeugt wurde, oder der Zugriff nicht lokal erfolgt
-        if (string.IsNullOrEmpty(SetupCode.Value))
-            SetupCode.Value = VbForum.Core.Security.VbPassword.RandomToken(12);
-        _needsCode = true;
-    }
-
-    private DbSettings ToSettings() => new()
-    {
-        Server = Input!.Server.Trim(), Port = Input.Port, Database = Input.Database.Trim(), User = Input.User.Trim(),
-        Password = Input.Password, TablePrefix = Input.TablePrefix.Trim(), UseSsl = Input.UseSsl
+        SetupStatus.NeedsConnection => "Verbindung zur Datenbank herstellen.",
+        SetupStatus.NeedsInstall => "Bestehendes vBulletin übernehmen oder ein neues Forum anlegen.",
+        _ => ""
     };
 
-    private async Task SubmitAsync()
-    {
-        if (_blocked) return;
-        if (!string.Equals(Input!.Code.Trim(), SetupCode.Value, StringComparison.Ordinal))
-        {
-            _error = "Der Einrichtungs-Code ist falsch. Er steht im Log der Anwendung.";
-            Services.GetRequiredService<ILogger<SetupInput>>().LogWarning("Einrichtungs-Code: {Code}", SetupCode.Value);
-            return;
-        }
-        var s = ToSettings();
-        var test = await Db.TestAsync(s);
-        if (!test.Ok) { _error = "Verbindung fehlgeschlagen:\n" + test.Message; _ok = null; return; }
-        _error = null;
-        if (Input.Action != "save") { _ok = test.Message; return; }
+    protected override async Task OnInitializedAsync() => await RefreshAsync();
 
+    private async Task RefreshAsync()
+    {
+        _status = await State.GetAsync();
+        if (_status == SetupStatus.NeedsConnection && !Store.FromEnv)
+        {
+            var c = Store.Current;
+            _db = new DbSettings { Server = c.Server, Port = c.Port, Database = c.Database, User = c.User, TablePrefix = c.TablePrefix, UseSsl = c.UseSsl };
+        }
+        if (_status == SetupStatus.NeedsInstall)
+        {
+            try { _info = await Installer.InspectAsync(); }
+            catch (Exception ex) { _error = ex.Message; }
+        }
+    }
+
+    private DbSettings Trimmed() => new()
+    {
+        Server = _db.Server.Trim(), Port = _db.Port, Database = _db.Database.Trim(), User = _db.User.Trim(),
+        Password = _db.Password, TablePrefix = _db.TablePrefix.Trim(), UseSsl = _db.UseSsl
+    };
+
+    private async Task TestAsync()
+    {
+        _busy = true; _error = _ok = null;
+        var r = await Db.TestAsync(Trimmed());
+        if (r.Ok) _ok = r.Message; else _error = "Verbindung fehlgeschlagen:\n" + r.Message;
+        _busy = false;
+    }
+
+    private async Task SaveConnectionAsync()
+    {
+        if (await State.GetAsync() != SetupStatus.NeedsConnection || Store.FromEnv) { await RefreshAsync(); return; }
+        _busy = true; _error = _ok = null;
+        var s = Trimmed();
+        var r = await Db.TestAsync(s);
+        if (!r.Ok) { _error = "Verbindung fehlgeschlagen:\n" + r.Message; _busy = false; return; }
         Store.Save(s);
-        await Schema.EnsureOwnTablesAsync();
         Cache.Invalidate();
-        var settings = (await Cache.GetAsync()).Settings;
-        if (!string.IsNullOrWhiteSpace(Input.BoardName)) settings.BoardName = Input.BoardName.Trim();
-        settings.BaseUrl = $"{HttpContext.Request.Scheme}://{HttpContext.Request.Host}";
-        await Cache.SaveSettingsAsync(settings);
-        SetupCode.Value = null;
-        Nav.NavigateTo("/login?returnUrl=%2Fadmin", forceLoad: true);
+        await RefreshAsync();
+        _busy = false;
+    }
+
+    private async Task BackAsync()
+    {
+        // Zurück zu Schritt 1: gespeicherte Verbindung wieder vergessen (geht nur, solange noch nichts eingerichtet ist)
+        if (Store.FromEnv || await State.GetAsync() != SetupStatus.NeedsInstall) return;
+        var c = Store.Current;
+        Store.Save(new DbSettings { Server = c.Server, Port = c.Port, TablePrefix = c.TablePrefix, UseSsl = c.UseSsl, Database = c.Database });
+        _info = null; _ok = _error = null;
+        await RefreshAsync();
+        _db.User = c.User;
+    }
+
+    private async Task FinishAsync()
+    {
+        _error = _ok = null;
+        if (await State.GetAsync() != SetupStatus.NeedsInstall) { await RefreshAsync(); return; }
+        var info = await Installer.InspectAsync();
+        if (!info.HasForumTables)
+        {
+            _admin.AdminName = _admin.AdminName.Trim();
+            _admin.AdminEmail = _admin.AdminEmail.Trim();
+            if (_admin.AdminName.Length < 2) { _error = "Bitte einen Benutzernamen für den Administrator eingeben."; return; }
+            if (!_admin.AdminEmail.Contains('@')) { _error = "Bitte eine gültige E-Mail-Adresse eingeben."; return; }
+            if (_admin.AdminPassword.Length < 8) { _error = "Das Passwort muss mindestens 8 Zeichen lang sein."; return; }
+            if (_admin.AdminPassword != _pw2) { _error = "Die Passwörter stimmen nicht überein."; return; }
+        }
+        _busy = true;
+        StateHasChanged();
+        try
+        {
+            if (info.HasForumTables) await Installer.AdoptExistingAsync();
+            else await Installer.InstallNewAsync(_admin);
+
+            // Einstellungen speichern – damit gilt das Forum als eingerichtet und /setup ist gesperrt
+            Cache.Invalidate();
+            var settings = (await Cache.GetAsync()).Settings;
+            settings.BoardName = string.IsNullOrWhiteSpace(_boardName) ? "Forum" : _boardName.Trim();
+            settings.BaseUrl = Nav.BaseUri.TrimEnd('/');
+            await Cache.SaveSettingsAsync(settings);
+            Cache.Invalidate();
+            Nav.NavigateTo("/login?returnUrl=%2Fadmin", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            _error = "Die Einrichtung ist fehlgeschlagen:\n" + ex.Message;
+            _busy = false;
+        }
     }
 }

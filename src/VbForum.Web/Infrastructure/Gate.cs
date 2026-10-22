@@ -6,8 +6,6 @@ using VbForum.Data;
 
 namespace VbForum.Web.Infrastructure;
 
-public sealed class SetupToken { public string? Value { get; set; } }
-
 public enum ForumRole { Moderator, Admin }
 
 public sealed record ForumRoleRequirement(ForumRole Role) : IAuthorizationRequirement;
@@ -38,13 +36,27 @@ public sealed class ForumGateMiddleware(RequestDelegate next)
         p.StartsWithSegments("/css") || p.StartsWithSegments("/js") || p.StartsWithSegments("/images") ||
         Path.HasExtension(p.Value ?? "") && !p.Value!.EndsWith(".php", StringComparison.OrdinalIgnoreCase);
 
-    public async Task InvokeAsync(HttpContext ctx, Db db, BoardCache cache, UserRepository users)
+    public async Task InvokeAsync(HttpContext ctx, SetupState setup, BoardCache cache, UserRepository users)
     {
         var path = ctx.Request.Path;
-        if (!db.IsConfigured)
+        var status = await setup.GetAsync();
+        if (status is SetupStatus.NeedsConnection or SetupStatus.NeedsInstall)
         {
+            // Noch nicht eingerichtet → alles auf /setup umleiten
             if (path.StartsWithSegments("/setup") || IsInfrastructure(path) || path.StartsWithSegments("/Error")) { await next(ctx); return; }
             ctx.Response.Redirect("/setup");
+            return;
+        }
+        if (status == SetupStatus.DbUnavailable)
+        {
+            if (IsInfrastructure(path)) { await next(ctx); return; }
+            await WriteUnavailableAsync(ctx);
+            return;
+        }
+        if (path.StartsWithSegments("/setup"))
+        {
+            // Nach der Einrichtung gibt es die Seite nicht mehr
+            ctx.Response.StatusCode = 404;
             return;
         }
         if (IsInfrastructure(path) || path.StartsWithSegments("/api") || path.StartsWithSegments("/attachment") || path.StartsWithSegments("/avatar") || path.StartsWithSegments("/imgproxy"))
@@ -57,11 +69,8 @@ public sealed class ForumGateMiddleware(RequestDelegate next)
         try { snap = await cache.GetAsync(); }
         catch (Exception)
         {
-            // DB nicht erreichbar → Admin kann unter /setup die Verbindung korrigieren
-            if (path.StartsWithSegments("/setup") || path.StartsWithSegments("/Error")) { await next(ctx); return; }
-            ctx.Response.StatusCode = 503;
-            ctx.Response.ContentType = "text/html; charset=utf-8";
-            await ctx.Response.WriteAsync("<!doctype html><meta charset=utf-8><title>Wartung</title><body style=\"font-family:system-ui;padding:40px\"><h1>Forum vorübergehend nicht erreichbar</h1><p>Die Datenbank antwortet nicht. Bitte versuche es in ein paar Minuten erneut.</p><p><a href=\"/setup\">Verbindung prüfen (Administratoren)</a></p>");
+            if (path.StartsWithSegments("/Error")) { await next(ctx); return; }
+            await WriteUnavailableAsync(ctx);
             return;
         }
 
@@ -85,6 +94,14 @@ public sealed class ForumGateMiddleware(RequestDelegate next)
             }
         }
         await next(ctx);
+    }
+
+    private static async Task WriteUnavailableAsync(HttpContext ctx)
+    {
+        ctx.Response.StatusCode = 503;
+        ctx.Response.Headers.RetryAfter = "60";
+        ctx.Response.ContentType = "text/html; charset=utf-8";
+        await ctx.Response.WriteAsync("<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width\"><title>Wartung</title><body style=\"font-family:system-ui;padding:40px\"><h1>Forum vorübergehend nicht erreichbar</h1><p>Die Datenbank antwortet nicht. Bitte versuche es in ein paar Minuten erneut.</p>");
     }
 }
 
