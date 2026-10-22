@@ -140,7 +140,7 @@ public sealed class ModerationService(Db db, BoardCache cache, Counters counters
             """, new { limit });
         return threads.Select(x => new QueueItem("thread", x.Item1, x.Item1, HtmlUtil.CleanTitle(x.Item2), HtmlUtil.CleanTitle(x.Item3), x.Item4, HtmlUtil.PlainText(x.Item5, 200), (int)x.Item6))
             .Concat(posts.Select(x => new QueueItem("post", x.Item1, x.Item2, HtmlUtil.CleanTitle(x.Item3), HtmlUtil.CleanTitle(x.Item4), x.Item5, HtmlUtil.PlainText(x.Item6, 200), (int)x.Item7)))
-            .OrderByDescending(x => x.Dateline).ToList();
+            .OrderByDescending(x => x.Dateline).Take(limit).ToList();
     }
 
     public async Task<long> QueueCountAsync()
@@ -149,6 +149,16 @@ public sealed class ModerationService(Db db, BoardCache cache, Counters counters
         return await c.ExecuteScalarAsync<long>($"""
             SELECT (SELECT COUNT(*) FROM {T.Thread} WHERE visible = 0) +
                    (SELECT COUNT(*) FROM {T.Post} p JOIN {T.Thread} t ON t.threadid = p.threadid WHERE p.visible = 0 AND p.postid <> t.firstpostid)
+            """);
+    }
+
+    /// <summary>Alle gelöschten Themen + gelöschte Antworten in nicht gelöschten Themen (wie die Liste, aber ohne Limit).</summary>
+    public async Task<long> DeletedCountAsync()
+    {
+        await using var c = await db.OpenAsync();
+        return await c.ExecuteScalarAsync<long>($"""
+            SELECT (SELECT COUNT(*) FROM {T.Thread} WHERE visible = 2) +
+                   (SELECT COUNT(*) FROM {T.Post} p JOIN {T.Thread} t ON t.threadid = p.threadid WHERE p.visible = 2 AND t.visible <> 2)
             """);
     }
 
@@ -168,6 +178,6 @@ public sealed class ModerationService(Db db, BoardCache cache, Counters counters
             """, new { limit });
         return threads.Select(x => new QueueItem("thread", x.Item1, x.Item1, HtmlUtil.CleanTitle(x.Item2), HtmlUtil.CleanTitle(x.Item3), x.Item4, HtmlUtil.CleanTitle(x.Item5), (int)x.Item6))
             .Concat(posts.Select(x => new QueueItem("post", x.Item1, x.Item2, HtmlUtil.CleanTitle(x.Item3), HtmlUtil.CleanTitle(x.Item4), x.Item5, HtmlUtil.CleanTitle(x.Item6), (int)x.Item7)))
-            .OrderByDescending(x => x.Dateline).ToList();
+            .OrderByDescending(x => x.Dateline).Take(limit).ToList();
     }
 }

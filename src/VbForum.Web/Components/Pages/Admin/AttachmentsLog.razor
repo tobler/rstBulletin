@@ -31,28 +31,71 @@
     }
     else
     {
-        <AdminShell Active="att" Title="Anhänge" Subtitle="@($"{ForumTime.Number(_stats?.Count ?? 0)} Dateien · {HtmlUtil.FormatBytes(_stats?.Bytes ?? 0)} in der Datenbank")">
+        <AdminShell Active="att" Title="Anhänge" Subtitle="@(_stats == null ? "Dateien in der Datenbank" : $"{ForumTime.Number(_stats.Count)} Dateien · {HtmlUtil.FormatBytes(_stats.Bytes)} in der Datenbank")">
             @if (_msg != null) { <div class="alert alert-ok" role="status">@_msg</div> }
             <section class="card">
-                <div class="card-head"><h2>Größte Anhänge</h2></div>
-                <div class="table-wrap">
-                    <table class="table">
-                        <thead><tr><th>Datei</th><th class="num">Größe</th><th class="hide-mobile">Thema</th><th class="hide-mobile">Von</th><th class="hide-mobile">Datum</th><th></th></tr></thead>
-                        <tbody>
-                            @foreach (var (a, tid, title, user) in _largest)
-                            {
-                                <tr>
-                                    <td><a href="/attachment/@a.AttachmentId" target="_blank">@a.DisplayName</a>@if (a.Width > 0) { <div class="small muted">@a.Width × @a.Height</div> }</td>
-                                    <td class="num nowrap">@HtmlUtil.FormatBytes(a.FileSize)</td>
-                                    <td class="hide-mobile small">@if (tid > 0) { <a href="/post/@a.ContentId" target="_blank">@HtmlUtil.CleanTitle(title)</a> }</td>
-                                    <td class="hide-mobile small">@HtmlUtil.CleanTitle(user)</td>
-                                    <td class="hide-mobile small nowrap">@ForumTime.Date(a.Dateline)</td>
-                                    <td><button type="button" class="btn btn-sm btn-ghost btn-danger" title="Anhang löschen" @onclick="() => _confirm = a"><Icon Name="trash" Size="16" /></button></td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
+                <div class="toolbar">
+                    <input class="input" style="flex:1 1 240px" placeholder="Dateiname oder Benutzer suchen" @bind="_q.Search" @bind:event="oninput" @onkeyup="SearchKey" aria-label="Anhänge durchsuchen" />
+                    <select class="input" style="flex:0 0 auto" @bind="_q.Kind" @bind:after="() => LoadAsync(1)" aria-label="Art">
+                        <option value="">Alle Dateien</option>
+                        <option value="images">Nur Bilder</option>
+                        <option value="files">Nur andere Dateien</option>
+                    </select>
+                    <select class="input" style="flex:0 0 auto" @bind="_q.Sort" @bind:after="() => LoadAsync(1)" aria-label="Sortierung">
+                        <option value="new">Neueste zuerst</option>
+                        <option value="old">Älteste zuerst</option>
+                        <option value="size">Größte zuerst</option>
+                        <option value="name">Dateiname A–Z</option>
+                    </select>
+                    <button type="button" class="btn" @onclick="() => LoadAsync(1)">Suchen</button>
                 </div>
+                @if (_rows == null)
+                {
+                    <div class="empty">Lade Anhänge …</div>
+                }
+                else
+                {
+                    <div class="table-wrap">
+                        <table class="table">
+                            <thead><tr><th style="width:64px"></th><th>Datei</th><th class="num">Größe</th><th class="hide-mobile">Thema</th><th class="hide-mobile">Von</th><th class="hide-mobile">Datum</th><th></th></tr></thead>
+                            <tbody>
+                                @foreach (var r in _rows.Items)
+                                {
+                                    var a = r.A;
+                                    <tr>
+                                        <td>
+                                            @if (a.IsImage)
+                                            {
+                                                <a href="/attachment/@a.AttachmentId" target="_blank"><img src="/attachment/@a.AttachmentId/thumb" alt="" loading="lazy" style="width:56px;height:42px;object-fit:cover;border-radius:6px;border:1px solid var(--border);display:block" /></a>
+                                            }
+                                            else { <span class="muted"><Icon Name="paperclip" /></span> }
+                                        </td>
+                                        <td><a href="/attachment/@a.AttachmentId" target="_blank">@a.DisplayName</a>@if (a.Width > 0) { <div class="small muted">@a.Width × @a.Height</div> }</td>
+                                        <td class="num nowrap">@HtmlUtil.FormatBytes(a.FileSize)</td>
+                                        <td class="hide-mobile small">@if (r.ThreadId > 0) { <a href="/post/@a.ContentId" target="_blank">@HtmlUtil.CleanTitle(r.ThreadTitle)</a> } else { <span class="muted">– Beitrag gelöscht –</span> }</td>
+                                        <td class="hide-mobile small">@if (a.UserId > 0) { <a href="/admin/users/@a.UserId">@HtmlUtil.CleanTitle(r.Username)</a> } else { @HtmlUtil.CleanTitle(r.Username) }</td>
+                                        <td class="hide-mobile small nowrap">@ForumTime.Date(a.Dateline)</td>
+                                        <td><button type="button" class="btn btn-sm btn-ghost btn-danger" title="Anhang löschen" @onclick="() => _confirm = a"><Icon Name="trash" Size="16" /></button></td>
+                                    </tr>
+                                }
+                                @if (_rows.Items.Count == 0) { <tr><td colspan="7" class="empty">Keine Anhänge gefunden.</td></tr> }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="list-foot">
+                        <span>@(_rows.Total == 0 ? "" : $"{(_rows.Page - 1) * _rows.PageSize + 1}–{Math.Min(_rows.Page * _rows.PageSize, _rows.Total)} von {ForumTime.Number(_rows.Total)}")</span>
+                        @if (_rows.PageCount > 1)
+                        {
+                            <div class="row" style="gap:6px">
+                                <button type="button" class="btn btn-sm" disabled="@(_rows.Page <= 1)" @onclick="() => LoadAsync(1)">«</button>
+                                <button type="button" class="btn btn-sm" disabled="@(_rows.Page <= 1)" @onclick="() => LoadAsync(_rows.Page - 1)">‹ Zurück</button>
+                                <span class="small">Seite @_rows.Page von @ForumTime.Number(_rows.PageCount)</span>
+                                <button type="button" class="btn btn-sm" disabled="@(_rows.Page >= _rows.PageCount)" @onclick="() => LoadAsync(_rows.Page + 1)">Weiter ›</button>
+                                <button type="button" class="btn btn-sm" disabled="@(_rows.Page >= _rows.PageCount)" @onclick="() => LoadAsync(_rows.PageCount)">»</button>
+                            </div>
+                        }
+                    </div>
+                }
             </section>
         </AdminShell>
     }
@@ -76,21 +119,33 @@
     private bool _log;
     private List<TokenRepository.AuditEntry> _audit = new();
     private AttachmentRepository.Stats? _stats;
-    private List<(Attachment A, long ThreadId, string ThreadTitle, string Username)> _largest = new();
+    private PagedResult<AttachmentRepository.AdminRow>? _rows;
+    private readonly AttachmentRepository.AdminQuery _q = new() { Sort = "new", Kind = "" };
     private Attachment? _confirm;
     private string? _msg;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized() => _log = Nav.ToBaseRelativePath(Nav.Uri).StartsWith("admin/log");
+
+    // Erst laden, wenn die Seite interaktiv ist – so erscheint sie sofort (kein doppeltes Laden beim Vorab-Rendern)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        _log = Nav.ToBaseRelativePath(Nav.Uri).StartsWith("admin/log");
-        if (_log) _audit = await Audit.AuditAsync(300);
-        else await LoadAsync();
+        if (!firstRender || !RendererInfo.IsInteractive) return;
+        if (_log) { _audit = await Audit.AuditAsync(300); StateHasChanged(); return; }
+        await LoadAsync(1);
+        StateHasChanged();
+        _stats = await Attachments.StatsAsync();
+        StateHasChanged();
     }
 
-    private async Task LoadAsync()
+    private async Task SearchKey(KeyboardEventArgs e)
     {
-        _stats = await Attachments.StatsAsync();
-        _largest = await Attachments.LargestAsync(50);
+        if (e.Key == "Enter") await LoadAsync(1);
+    }
+
+    private async Task LoadAsync(int page)
+    {
+        _q.Page = Math.Max(1, page);
+        _rows = await Attachments.AdminSearchAsync(_q);
     }
 
     private async Task Delete()
@@ -100,6 +155,7 @@
         await Attachments.DeleteAsync(a.AttachmentId);
         await Audit.LogAsync(await Current.GetAsync(), "attachment.delete", $"{a.AttachmentId} {a.DisplayName}", "");
         _msg = $"„{a.DisplayName}“ gelöscht.";
-        await LoadAsync();
+        await LoadAsync(_q.Page);
+        _stats = await Attachments.StatsAsync(refresh: true);
     }
 }

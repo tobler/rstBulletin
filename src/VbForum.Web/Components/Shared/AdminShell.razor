@@ -52,4 +52,11 @@
     }
 
     private string? A(string key) => key == Active ? "active" : null;
+
+    /// <summary>Zähler im Menü neu laden (z. B. nach Freischalten/Löschen in der Moderation).</summary>
+    public async Task RefreshAsync()
+    {
+        try { _queue = await Moderation.QueueCountAsync(); } catch { }
+        StateHasChanged();
+    }
 }

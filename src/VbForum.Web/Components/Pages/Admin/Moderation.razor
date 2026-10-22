@@ -12,17 +12,38 @@
 <PageTitle>Moderation</PageTitle>
 
 <main class="page container">
-    <AdminShell Active="mod" Title="Moderation" Subtitle="Freischalten, gelöschte Inhalte wiederherstellen oder endgültig entfernen">
+    <AdminShell @ref="_shell" Active="mod" Title="Moderation" Subtitle="Freischalten, gelöschte Inhalte wiederherstellen oder endgültig entfernen">
         @if (_msg != null) { <div class="alert alert-ok" role="status">@_msg</div> }
         <div class="seg" role="tablist" style="align-self:flex-start">
-            <button type="button" role="tab" aria-selected="@(!_deleted)" class="@(!_deleted ? "on" : "")" @onclick="() => Show(false)">Wartet auf Freigabe (@_queue.Count)</button>
-            <button type="button" role="tab" aria-selected="@_deleted" class="@(_deleted ? "on" : "")" @onclick="() => Show(true)">Gelöscht (@_trash.Count)</button>
+            <button type="button" role="tab" aria-selected="@(!_deleted)" class="@(!_deleted ? "on" : "")" @onclick="() => Show(false)">Wartet auf Freigabe (@ForumTime.Number(_queueTotal))</button>
+            <button type="button" role="tab" aria-selected="@_deleted" class="@(_deleted ? "on" : "")" @onclick="() => Show(true)">Gelöscht (@ForumTime.Number(_trashTotal))</button>
         </div>
 
         <section class="card">
-            @foreach (var i in _deleted ? _trash : _queue)
+            @{ var list = _deleted ? _trash : _queue; var total = _deleted ? _trashTotal : _queueTotal; }
+            @if (list.Count > 0)
+            {
+                <div class="toolbar">
+                    <label class="check"><input type="checkbox" checked="@(list.Count > 0 && list.All(x => _sel.Contains(Key(x))))" @onchange="e => SelectAll(list, (bool)e.Value!)" />Alle auf dieser Seite</label>
+                    <span class="small muted">@_sel.Count ausgewählt</span>
+                    <span class="spacer" style="flex:1"></span>
+                    @if (_deleted)
+                    {
+                        <button type="button" class="btn btn-sm" disabled="@(_sel.Count == 0 || _busy)" @onclick="BulkRestore">Auswahl wiederherstellen</button>
+                        @if (_isSuper) { <button type="button" class="btn btn-sm btn-danger" disabled="@(_sel.Count == 0 || _busy)" @onclick="BulkPurge">Auswahl endgültig löschen</button> }
+                    }
+                    else
+                    {
+                        <button type="button" class="btn btn-sm btn-primary" disabled="@(_sel.Count == 0 || _busy)" @onclick="BulkApprove">Auswahl freischalten</button>
+                        <button type="button" class="btn btn-sm btn-danger" disabled="@(_sel.Count == 0 || _busy)" @onclick="BulkDelete">Auswahl löschen</button>
+                    }
+                </div>
+                @if (total > list.Count) { <div class="list-foot"><span>Angezeigt werden die neuesten @list.Count von @ForumTime.Number(total). Nach dem Bearbeiten rücken weitere nach.</span></div> }
+            }
+            @foreach (var i in list)
             {
                 <div class="thread-row" style="align-items:flex-start">
+                    <input type="checkbox" style="margin-top:6px;width:18px;height:18px;flex:0 0 auto" aria-label="Auswählen" checked="@_sel.Contains(Key(i))" @onchange="e => Toggle(i, (bool)e.Value!)" />
                     <div class="thread-main">
                         <div class="stack" style="gap:3px;min-width:0">
                             <div class="thread-title-line">
@@ -57,7 +78,30 @@
     private ForumUser? _me;
     private Permissions? _perms;
     private List<ModerationService.QueueItem> _queue = new(), _trash = new();
-    private bool _deleted, _isSuper;
+    private AdminShell? _shell;
+    private bool _deleted, _isSuper, _busy;
+    private long _queueTotal, _trashTotal;
+    private readonly HashSet<string> _sel = new();
+
+    private static string Key(ModerationService.QueueItem i) => i.Type + ":" + i.Id;
+    private void Toggle(ModerationService.QueueItem i, bool on) { if (on) _sel.Add(Key(i)); else _sel.Remove(Key(i)); }
+    private void SelectAll(List<ModerationService.QueueItem> list, bool on) { foreach (var i in list) Toggle(i, on); }
+    private List<ModerationService.QueueItem> Selected() => (_deleted ? _trash : _queue).Where(i => _sel.Contains(Key(i))).ToList();
+
+    private async Task Bulk(Func<ModerationService.QueueItem, Task> action, string done)
+    {
+        _busy = true;
+        var items = Selected();
+        foreach (var i in items) await action(i);
+        _sel.Clear();
+        _msg = $"{items.Count} {(items.Count == 1 ? "Eintrag" : "Einträge")} {done}.";
+        await LoadAsync();
+        _busy = false;
+    }
+    private Task BulkApprove() => Bulk(ApproveOne, "freigeschaltet");
+    private Task BulkDelete() => Bulk(DeleteOne, "gelöscht");
+    private Task BulkRestore() => Bulk(RestoreOne, "wiederhergestellt");
+    private Task BulkPurge() => _isSuper ? Bulk(PurgeOne, "endgültig gelöscht") : Task.CompletedTask;
     private string? _msg;
 
     protected override async Task OnInitializedAsync()
@@ -74,42 +118,47 @@
         bool Can(ModerationService.QueueItem i) => _snap.Forum(i.ForumId) is { } f && _perms.IsModerator(_me!, f);
         _queue = (await Mod.QueueAsync()).Where(Can).ToList();
         _trash = (await Mod.DeletedAsync()).Where(Can).ToList();
+        // Gesamtzahlen: für Admins/Super-Moderatoren aus der DB, sonst nur die eigenen Foren (Liste)
+        _queueTotal = _isSuper ? await Mod.QueueCountAsync() : _queue.Count;
+        _trashTotal = _isSuper ? await Mod.DeletedCountAsync() : _trash.Count;
+        _sel.IntersectWith((_queue.Concat(_trash)).Select(Key));
+        if (_shell != null) await _shell.RefreshAsync();
     }
 
-    private void Show(bool deleted) => _deleted = deleted;
+    private void Show(bool deleted) { _deleted = deleted; _sel.Clear(); }
 
-    private async Task Approve(ModerationService.QueueItem i)
+    private async Task Approve(ModerationService.QueueItem i) { await ApproveOne(i); _msg = "Freigeschaltet."; await LoadAsync(); }
+    private async Task Delete(ModerationService.QueueItem i) { await DeleteOne(i); _msg = "Gelöscht."; await LoadAsync(); }
+    private async Task Restore(ModerationService.QueueItem i) { await RestoreOne(i); _msg = "Wiederhergestellt."; await LoadAsync(); }
+    private async Task Purge(ModerationService.QueueItem i) { if (!_isSuper) return; await PurgeOne(i); _msg = "Endgültig gelöscht."; await LoadAsync(); }
+
+    private async Task ApproveOne(ModerationService.QueueItem i)
     {
         if (i.Type == "thread") await Mod.ApproveThreadAsync(i.Id);
         else if (await Posts.GetAsync(i.Id) is { } p) await Posting.ApprovePostAsync(p);
         await Audit.LogAsync(_me!, $"{i.Type}.approve", $"{i.Id} {i.Title}", "");
-        _msg = "Freigeschaltet."; await LoadAsync();
     }
 
-    private async Task Delete(ModerationService.QueueItem i)
+    private async Task DeleteOne(ModerationService.QueueItem i)
     {
         var t = await Threads.GetAsync(i.ThreadId);
         if (t == null) return;
         if (i.Type == "thread") await Mod.SoftDeleteThreadAsync(_me!, t, "Nicht freigegeben");
         else if (await Posts.GetAsync(i.Id) is { } p) await Posting.SoftDeletePostAsync(_me!, p, t, "Nicht freigegeben");
         await Audit.LogAsync(_me!, $"{i.Type}.reject", $"{i.Id} {i.Title}", "");
-        _msg = "Gelöscht."; await LoadAsync();
     }
 
-    private async Task Restore(ModerationService.QueueItem i)
+    private async Task RestoreOne(ModerationService.QueueItem i)
     {
         if (i.Type == "thread") await Mod.RestoreThreadAsync(i.Id);
         else if (await Posts.GetAsync(i.Id) is { } p) await Posting.RestorePostAsync(p);
         await Audit.LogAsync(_me!, $"{i.Type}.restore", $"{i.Id} {i.Title}", "");
-        _msg = "Wiederhergestellt."; await LoadAsync();
     }
 
-    private async Task Purge(ModerationService.QueueItem i)
+    private async Task PurgeOne(ModerationService.QueueItem i)
     {
-        if (!_isSuper) return;
         if (i.Type == "thread") await Mod.HardDeleteThreadAsync(i.Id);
         else if (await Posts.GetAsync(i.Id) is { } p) await Posting.HardDeletePostAsync(p);
         await Audit.LogAsync(_me!, $"{i.Type}.harddelete", $"{i.Id} {i.Title}", "");
-        _msg = "Endgültig gelöscht."; await LoadAsync();
     }
 }

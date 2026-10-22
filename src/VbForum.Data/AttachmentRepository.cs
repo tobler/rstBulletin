@@ -130,26 +130,73 @@ public sealed class AttachmentRepository(Db db, BoardCache cache)
 
     public sealed record Stats(long Count, long Bytes);
 
-    public async Task<Stats> StatsAsync()
+    private Stats? _stats;
+    private DateTime _statsAt;
+
+    /// <summary>Anzahl und Gesamtgröße – die Summe liest alle Datei-Zeilen, deshalb 10 Minuten gecacht.</summary>
+    public async Task<Stats> StatsAsync(bool refresh = false)
     {
+        if (!refresh && _stats != null && DateTime.UtcNow - _statsAt < TimeSpan.FromMinutes(10)) return _stats;
         await using var c = await db.OpenAsync();
-        var r = await c.QueryFirstAsync<(long, long)>($"SELECT COUNT(*), CAST(IFNULL(SUM(filesize),0) AS SIGNED) FROM {T.FileData}");
-        return new Stats(r.Item1, r.Item2);
+        var r = await c.QueryFirstAsync<(long, long)>($"SELECT COUNT(*), CAST(IFNULL(SUM(filesize),0) AS SIGNED) FROM {T.FileData}", commandTimeout: 300);
+        _statsAt = DateTime.UtcNow;
+        return _stats = new Stats(r.Item1, r.Item2);
     }
 
-    public async Task<List<(Attachment A, long ThreadId, string ThreadTitle, string Username)>> LargestAsync(int limit)
+    public sealed class AdminQuery
+    {
+        public string? Search { get; set; }
+        /// <summary>„images“, „files“ oder leer.</summary>
+        public string? Kind { get; set; }
+        /// <summary>„new“ (Standard), „old“, „size“, „name“.</summary>
+        public string? Sort { get; set; }
+        public int Page { get; set; } = 1;
+        public int PageSize { get; set; } = 50;
+    }
+
+    public sealed record AdminRow(Attachment A, long ThreadId, string ThreadTitle, string Username);
+
+    /// <summary>
+    /// Anhänge für die Verwaltung, seitenweise. Erst werden nur die IDs der Seite ermittelt (schmale Abfrage),
+    /// danach die Details für genau diese Zeilen – so bleibt es auch bei Zehntausenden Dateien schnell.
+    /// </summary>
+    public async Task<PagedResult<AdminRow>> AdminSearchAsync(AdminQuery q)
     {
         var type = (await cache.GetAsync()).PostContentTypeId;
+        var images = Attachment.ImageExtensions.ToArray();
+        var where = new List<string> { "a.contenttypeid = @type" };
+        var needFile = false;
+        if (!string.IsNullOrWhiteSpace(q.Search))
+            where.Add($"(a.filename LIKE @s OR a.userid IN (SELECT userid FROM {T.User} WHERE username LIKE @s))");
+        if (q.Kind == "images") { where.Add("f.extension IN @images"); needFile = true; }
+        if (q.Kind == "files") { where.Add("f.extension NOT IN @images"); needFile = true; }
+        var order = q.Sort switch
+        {
+            "old" => "a.attachmentid ASC",
+            "size" => "f.filesize DESC, a.attachmentid DESC",
+            "name" => "a.filename ASC, a.attachmentid DESC",
+            _ => "a.attachmentid DESC",
+        };
+        if (q.Sort == "size") needFile = true;
+        var join = needFile ? $"JOIN {T.FileData} f ON f.filedataid = a.filedataid" : "";
+        var w = string.Join(" AND ", where);
+        var p = new { type, images, s = $"%{q.Search?.Trim()}%", off = (Math.Max(1, q.Page) - 1) * q.PageSize, size = q.PageSize };
+
         await using var c = await db.OpenAsync();
-        var rows = await c.QueryAsync<Attachment, long, string, string, (Attachment, long, string, string)>(
+        var total = await c.ExecuteScalarAsync<long>($"SELECT COUNT(*) FROM {T.Attachment} a {join} WHERE {w}", p, commandTimeout: 120);
+        var ids = (await c.QueryAsync<long>($"SELECT CAST(a.attachmentid AS SIGNED) FROM {T.Attachment} a {join} WHERE {w} ORDER BY {order} LIMIT @off, @size", p, commandTimeout: 120)).ToList();
+        if (ids.Count == 0) return new PagedResult<AdminRow>(Array.Empty<AdminRow>(), total, q.Page, q.PageSize);
+
+        var rows = (await c.QueryAsync<Attachment, long, string, string, AdminRow>(
             $"""
             SELECT {Cols}, CAST(IFNULL(p.threadid,0) AS SIGNED) AS threadid, t.title, u.username FROM {T.Attachment} a
             JOIN {T.FileData} f ON f.filedataid = a.filedataid
             LEFT JOIN {T.Post} p ON p.postid = a.contentid
             LEFT JOIN {T.Thread} t ON t.threadid = p.threadid
             LEFT JOIN {T.User} u ON u.userid = a.userid
-            WHERE a.contenttypeid = @type ORDER BY f.filesize DESC LIMIT @limit
-            """, (a, tid, title, user) => (a, tid, title ?? "", user ?? ""), new { type, limit }, splitOn: "threadid,title,username");
-        return rows.ToList();
+            WHERE a.attachmentid IN @ids
+            """, (a, tid, title, user) => new AdminRow(a, tid, title ?? "", user ?? ""), new { ids }, splitOn: "threadid,title,username"))
+            .ToDictionary(r => r.A.AttachmentId);
+        return new PagedResult<AdminRow>(ids.Where(rows.ContainsKey).Select(id => rows[id]).ToList(), total, q.Page, q.PageSize);
     }
 }
