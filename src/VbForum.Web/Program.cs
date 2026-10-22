@@ -54,6 +54,7 @@ builder.Services.AddSingleton<LoginThrottle>();
 builder.Services.AddSingleton<MaintenanceJobs>();
 builder.Services.AddSingleton<SetupState>();
 builder.Services.AddSingleton<Installer>();
+builder.Services.AddSingleton<LegacyLookup>();
 builder.Services.AddHostedService<ForumBackgroundService>();
 builder.Services.AddScoped<CurrentUser>();
 

@@ -109,36 +109,13 @@ public static class Endpoints
 
         // ---------- Alte vBulletin-URLs ----------
 
-        app.MapGet("/showthread.php", (HttpContext h) =>
-        {
-            var q = h.Request.Query;
-            if (long.TryParse(q["p"], out var pid)) return Results.Redirect($"/post/{pid}", permanent: true);
-            if (long.TryParse(q["t"], out var tid))
-            {
-                var page = int.TryParse(q["page"], out var pg) && pg > 1 ? $"?page={pg}" : "";
-                return Results.Redirect($"/thread/{tid}{page}", permanent: true);
-            }
-            // vB-SEO-Format: showthread.php?12345-Titel
-            var raw = h.Request.QueryString.Value?.TrimStart('?') ?? "";
-            var lead = new string(raw.TakeWhile(char.IsDigit).ToArray());
-            return long.TryParse(lead, out var t2) ? Results.Redirect($"/thread/{t2}", permanent: true) : Results.Redirect("/");
-        });
-        app.MapGet("/forumdisplay.php", (HttpContext h) =>
-        {
-            var q = h.Request.Query;
-            if (int.TryParse(q["f"], out var fid)) return Results.Redirect($"/forum/{fid}", permanent: true);
-            var raw = h.Request.QueryString.Value?.TrimStart('?') ?? "";
-            var lead = new string(raw.TakeWhile(char.IsDigit).ToArray());
-            return int.TryParse(lead, out var f2) ? Results.Redirect($"/forum/{f2}", permanent: true) : Results.Redirect("/");
-        });
-        app.MapGet("/member.php", (HttpContext h) =>
-        {
-            var q = h.Request.Query;
-            if (long.TryParse(q["u"], out var uid)) return Results.Redirect($"/user/{uid}", permanent: true);
-            var raw = h.Request.QueryString.Value?.TrimStart('?') ?? "";
-            var lead = new string(raw.TakeWhile(char.IsDigit).ToArray());
-            return long.TryParse(lead, out var u2) ? Results.Redirect($"/user/{u2}", permanent: true) : Results.Redirect("/members");
-        });
+        // showthread.php?t=123&page=2, ?p=456, ?123-Titel, /showthread.php/123-Titel/page2 und /showthread.php/Titel/page2
+        app.MapGet("/showthread.php/{**rest}", (HttpContext h, LegacyLookup lookup, BoardCache cache) => LegacyThreadAsync(h, lookup, cache));
+        app.MapGet("/showthread.php", (HttpContext h, LegacyLookup lookup, BoardCache cache) => LegacyThreadAsync(h, lookup, cache));
+        app.MapGet("/forumdisplay.php/{**rest}", (HttpContext h, LegacyLookup lookup) => LegacyForumAsync(h, lookup));
+        app.MapGet("/forumdisplay.php", (HttpContext h, LegacyLookup lookup) => LegacyForumAsync(h, lookup));
+        app.MapGet("/member.php/{**rest}", (HttpContext h, LegacyLookup lookup) => LegacyMemberAsync(h, lookup));
+        app.MapGet("/member.php", (HttpContext h, LegacyLookup lookup) => LegacyMemberAsync(h, lookup));
         app.MapGet("/attachment.php", (long? attachmentid) =>
             attachmentid is long a ? Results.Redirect($"/attachment/{a}", permanent: true) : Results.NotFound());
         app.MapGet("/index.php", () => Results.Redirect("/", permanent: true));
@@ -371,5 +348,109 @@ public static class Endpoints
             await File.WriteAllTextAsync(file + ".type", "missing");
             return Results.NotFound();
         }
+    }
+
+    // ---------- Alte vB-URLs ----------
+
+    /// <summary>
+    /// Teile einer alten URL: Pfad nach „xyz.php/“ bzw. die „nackte“ Query (?123-Titel/page2), jeweils an „/“ getrennt.
+    /// Prozent-Kodierung wird aus der Roh-URL gelesen: erst als UTF-8, sonst als ISO-8859-1 (so hat das alte Board kodiert).
+    /// </summary>
+    private static List<string> LegacySegments(HttpContext h, string script)
+    {
+        var raw = h.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpRequestFeature>()?.RawTarget ?? (h.Request.Path + h.Request.QueryString);
+        var q = raw.IndexOf('?');
+        var path = q >= 0 ? raw[..q] : raw;
+        var query = q >= 0 ? raw[(q + 1)..] : "";
+        var i = path.IndexOf(script, StringComparison.OrdinalIgnoreCase);
+        var rest = i >= 0 ? path[(i + script.Length)..].Trim('/') : "";
+        if (rest.Length == 0)
+        {
+            // ?123-Titel/page2 (ohne key=value am Anfang)
+            var first = query.Split('&')[0];
+            if (first.Length > 0 && !first.Contains('=')) rest = first;
+        }
+        return rest.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(DecodeLegacy).Where(x => x.Length > 0).ToList();
+    }
+
+    private static string DecodeLegacy(string s)
+    {
+        var bytes = new List<byte>(s.Length);
+        for (int i = 0; i < s.Length; i++)
+        {
+            if (s[i] == '%' && i + 2 < s.Length && Uri.IsHexDigit(s[i + 1]) && Uri.IsHexDigit(s[i + 2]))
+            {
+                bytes.Add(Convert.ToByte(s.Substring(i + 1, 2), 16)); i += 2;
+            }
+            else if (s[i] == '+') bytes.Add((byte)' ');
+            else bytes.AddRange(System.Text.Encoding.UTF8.GetBytes(s[i].ToString()));
+        }
+        var arr = bytes.ToArray();
+        try { return new System.Text.UTF8Encoding(false, true).GetString(arr); }
+        catch (System.Text.DecoderFallbackException) { return System.Text.Encoding.Latin1.GetString(arr); }
+    }
+
+    /// <summary>„123-Titel“ → 123, „Titel“ → null.</summary>
+    private static long? LeadingId(string seg)
+    {
+        var digits = new string(seg.TakeWhile(char.IsDigit).ToArray());
+        return digits.Length > 0 && (digits.Length == seg.Length || seg[digits.Length] == '-') && long.TryParse(digits, out var id) ? id : null;
+    }
+
+    private static int? PageOf(IEnumerable<string> segs, HttpContext h)
+    {
+        foreach (var s in segs)
+            if (s.StartsWith("page", StringComparison.OrdinalIgnoreCase) && int.TryParse(s[4..], out var p)) return p;
+        return int.TryParse(h.Request.Query["page"], out var qp) ? qp : null;
+    }
+
+    private static async Task<IResult> LegacyThreadAsync(HttpContext h, LegacyLookup lookup, BoardCache cache)
+    {
+        var q = h.Request.Query;
+        if (long.TryParse(q["p"], out var pid) || long.TryParse(q["postid"], out pid)) return Results.Redirect($"/post/{pid}", permanent: true);
+
+        var segs = LegacySegments(h, "showthread.php");
+        long? tid = long.TryParse(q["t"], out var t) || long.TryParse(q["threadid"], out t) ? t : segs.Count > 0 ? LeadingId(segs[0]) : null;
+
+        // Seite umrechnen: vB hatte evtl. eine andere Anzahl Beiträge pro Seite
+        var vbPage = PageOf(segs.Skip(1), h) ?? 1;
+        var pageQuery = "";
+        if (vbPage > 1)
+        {
+            var ours = Math.Max(1, (await cache.GetAsync()).Settings.PostsPerPage);
+            var page = (vbPage - 1) * await lookup.VbPostsPerPageAsync() / ours + 1;
+            if (page > 1) pageQuery = $"?page={page}";
+        }
+
+        if (tid is long id) return Results.Redirect($"/thread/{id}{pageQuery}", permanent: true);
+        if (segs.Count == 0) return Results.Redirect("/");
+
+        // Nur der Titel in der URL → Thema über den Titel suchen
+        var hits = await lookup.FindThreadsAsync(segs[0]);
+        if (hits.Count == 1) return Results.Redirect($"/thread/{hits[0].ThreadId}{pageQuery}", permanent: true);
+        // Mehrdeutig oder nicht gefunden → Titelsuche zeigen
+        var words = segs[0].Replace('-', ' ').Replace('_', ' ').Trim();
+        return Results.Redirect($"/search?q={Uri.EscapeDataString(words)}&in=titles");
+    }
+
+    private static async Task<IResult> LegacyForumAsync(HttpContext h, LegacyLookup lookup)
+    {
+        var q = h.Request.Query;
+        if (int.TryParse(q["f"], out var fid) || int.TryParse(q["forumid"], out fid)) return Results.Redirect($"/forum/{fid}", permanent: true);
+        var segs = LegacySegments(h, "forumdisplay.php");
+        if (segs.Count == 0) return Results.Redirect("/");
+        if (LeadingId(segs[0]) is long id) return Results.Redirect($"/forum/{id}", permanent: true);
+        var hits = await lookup.FindForumsAsync(segs[0]);
+        return hits.Count == 1 ? Results.Redirect($"/forum/{hits[0]}", permanent: true) : Results.Redirect("/");
+    }
+
+    private static async Task<IResult> LegacyMemberAsync(HttpContext h, LegacyLookup lookup)
+    {
+        var q = h.Request.Query;
+        if (long.TryParse(q["u"], out var uid) || long.TryParse(q["userid"], out uid)) return Results.Redirect($"/user/{uid}", permanent: true);
+        var segs = LegacySegments(h, "member.php");
+        if (segs.Count == 0) return Results.Redirect("/members");
+        if (LeadingId(segs[0]) is long id) return Results.Redirect($"/user/{id}", permanent: true);
+        return await lookup.FindUserAsync(segs[0]) is long u ? Results.Redirect($"/user/{u}", permanent: true) : Results.Redirect("/members");
     }
 }
