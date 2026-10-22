@@ -112,6 +112,29 @@ public static class Endpoints
 
         app.MapGet("/imgproxy", ImageProxyAsync);
 
+        // Vorschau der Mailvorlagen (nur Admins)
+        app.MapGet("/admin/mail-preview", async (string? type, MailService mail, BoardCache cache) =>
+        {
+            var board = (await cache.GetAsync()).Settings.BoardName;
+            var (subject, content) = type switch
+            {
+                "reply" => ("Neue Antwort: Wochenende", new MailContent("Hallo MaxM,", new[] { "Kathi_R hat im Thema „Wochenende“ geantwortet:" },
+                    "Zum Beitrag", await mail.AbsoluteUrlAsync("/post/1"), Quote: "Klingt gut, ich bin dabei! Treffpunkt wie immer um 10 Uhr?",
+                    Footnote: "Weitere Benachrichtigungen zu diesem Thema erhältst du erst, wenn du das Forum wieder besucht hast.")),
+                "reset" => ("Passwort zurücksetzen", new MailContent("Hallo MaxM,", new[] { "für dein Konto wurde ein neues Passwort angefordert. Über den folgenden Knopf kannst du es festlegen." },
+                    "Neues Passwort festlegen", await mail.AbsoluteUrlAsync("/account/reset?token=beispiel"),
+                    Footnote: "Der Link ist 2 Stunden gültig. Wenn du das nicht warst, ignoriere diese Mail – dein Passwort bleibt unverändert.")),
+                _ => ($"Bitte bestätige deine E-Mail-Adresse – {board}", new MailContent("Hallo MaxM,",
+                    new[] { $"schön, dass du dich bei {board} registriert hast! Bitte bestätige noch deine E-Mail-Adresse, damit dein Konto freigeschaltet wird." },
+                    "E-Mail-Adresse bestätigen", await mail.AbsoluteUrlAsync("/account/confirm?token=beispiel"),
+                    Footnote: "Der Link ist 7 Tage gültig. Falls du dich nicht registriert hast, kannst du diese Mail einfach ignorieren.")),
+            };
+            var nav = "<div style=\"font:13px system-ui;text-align:center;padding:10px;background:#fff;border-bottom:1px solid #ddd\">Vorschau: " +
+                      "<a href=\"?type=confirm\">Registrierung</a> · <a href=\"?type=reset\">Passwort</a> · <a href=\"?type=reply\">Abo-Benachrichtigung</a></div>";
+            var html = await mail.PreviewAsync(subject, content);
+            return Results.Content(html.Replace("<body style=\"margin:0;padding:0;background:#EEF1F6\">", "<body style=\"margin:0;padding:0;background:#EEF1F6\">" + nav), "text/html; charset=utf-8");
+        }).RequireAuthorization("Admin");
+
         // ---------- Status für das PN-Popup (wird vom Browser regelmäßig abgefragt) ----------
         app.MapGet("/api/pm/status", async (HttpContext http, PmRepository pms, UserRepository users) =>
         {

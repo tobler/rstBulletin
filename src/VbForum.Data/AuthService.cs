@@ -90,8 +90,12 @@ public sealed partial class AuthService(UserRepository users, BoardCache cache, 
     {
         var token = await tokens.CreateAsync(userId, "confirm", email, TimeSpan.FromDays(7));
         var url = await mail.AbsoluteUrlAsync($"/account/confirm?token={Uri.EscapeDataString(token)}");
-        await mail.SendAsync(email, "Bitte bestätige deine E-Mail-Adresse",
-            $"Hallo {username},\n\nbitte bestätige deine Registrierung mit diesem Link (7 Tage gültig):\n\n{url}\n\nFalls du dich nicht registriert hast, ignoriere diese Mail einfach.");
+        var board = (await cache.GetAsync()).Settings.BoardName;
+        await mail.SendAsync(email, $"Bitte bestätige deine E-Mail-Adresse – {board}", new MailContent(
+            $"Hallo {username},",
+            new[] { $"schön, dass du dich bei {board} registriert hast! Bitte bestätige noch deine E-Mail-Adresse, damit dein Konto freigeschaltet wird." },
+            "E-Mail-Adresse bestätigen", url,
+            Footnote: "Der Link ist 7 Tage gültig. Falls du dich nicht registriert hast, kannst du diese Mail einfach ignorieren."));
     }
 
     public async Task<bool> ConfirmAsync(string token)
@@ -115,8 +119,11 @@ public sealed partial class AuthService(UserRepository users, BoardCache cache, 
         {
             var token = await tokens.CreateAsync(u.UserId, "reset", "", TimeSpan.FromHours(2));
             var url = await mail.AbsoluteUrlAsync($"/account/reset?token={Uri.EscapeDataString(token)}");
-            await mail.SendAsync(u.Email, "Passwort zurücksetzen",
-                $"Hallo {u.DisplayName},\n\nfür dein Konto wurde ein neues Passwort angefordert. Über diesen Link kannst du es festlegen (2 Stunden gültig):\n\n{url}\n\nWenn du das nicht warst, ignoriere diese Mail – dein Passwort bleibt unverändert.");
+            await mail.SendAsync(u.Email, "Passwort zurücksetzen", new MailContent(
+                $"Hallo {u.DisplayName},",
+                new[] { "für dein Konto wurde ein neues Passwort angefordert. Über den folgenden Knopf kannst du es festlegen." },
+                "Neues Passwort festlegen", url,
+                Footnote: "Der Link ist 2 Stunden gültig. Wenn du das nicht warst, ignoriere diese Mail – dein Passwort bleibt unverändert."));
         }
     }
 

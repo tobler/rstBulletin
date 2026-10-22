@@ -183,8 +183,11 @@
             var url = await Mail.AbsoluteUrlAsync("/account/pm");
             foreach (var r in recipients)
                 if (await Users.GetAsync(r.UserId) is { } ru)
-                    _ = Mail.SendAsync(ru.Email, $"Neue private Nachricht von {_user.Username}",
-                        $"Hallo {ru.DisplayName},\n\n{_user.Username} hat dir eine private Nachricht geschickt: „{c.Title}“\n\nLesen: {url}");
+                    _ = Mail.SendAsync(ru.Email, $"Neue private Nachricht von {_user.Username}", new MailContent(
+                        $"Hallo {ru.DisplayName},",
+                        new[] { $"{_user.Username} hat dir eine private Nachricht geschickt: „{c.Title}“" },
+                        "Nachricht lesen", url,
+                        Footnote: "Diese Benachrichtigung kannst du in deinem Benutzerbereich unter „Benachrichtigungen & Abos“ abschalten."));
         }
         Nav.NavigateTo("/account/pm?msg=sent", forceLoad: true);
     }

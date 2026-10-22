@@ -179,9 +179,11 @@ public sealed class PostingService(Db db, BoardCache cache, Counters counters, A
             {
                 var fu = ForumUser.From(s, snap);
                 if (fu.IsBanned || !perms.CanReadThread(fu, f, t)) continue;
-                await mail.SendAsync(s.Email, $"Neue Antwort: {t.DisplayTitle}",
-                    $"Hallo {s.DisplayName},\n\n{author.Username} hat im Thema „{t.DisplayTitle}“ geantwortet:\n\n{excerpt}\n\nZum Beitrag: {url}\n\n" +
-                    "Weitere Benachrichtigungen erhältst du erst, wenn du das Forum wieder besucht hast. Abos verwaltest du in deinem Benutzerbereich.");
+                await mail.SendAsync(s.Email, $"Neue Antwort: {t.DisplayTitle}", new MailContent(
+                    $"Hallo {s.DisplayName},",
+                    new[] { $"{author.Username} hat im Thema „{t.DisplayTitle}“ geantwortet:" },
+                    "Zum Beitrag", url, Quote: excerpt,
+                    Footnote: "Weitere Benachrichtigungen zu diesem Thema erhältst du erst, wenn du das Forum wieder besucht hast. Abos verwaltest du in deinem Benutzerbereich."));
             }
         }
         catch (Exception ex) { log.LogWarning(ex, "Abo-Benachrichtigung fehlgeschlagen"); }

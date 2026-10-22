@@ -51,6 +51,10 @@ public sealed class BoardSettings
     public string SmtpPassword { get; set; } = "";
     public bool SmtpSsl { get; set; } = true;
     public string MailFrom { get; set; } = "";
+    /// <summary>Angezeigter Absendername (leer = Name des Forums).</summary>
+    public string MailFromName { get; set; } = "";
+    /// <summary>Optionale Antwortadresse (Reply-To).</summary>
+    public string MailReplyTo { get; set; } = "";
 
     public int MaxAttachmentKb { get; set; } = 4096;
     public int MaxAttachmentsPerPost { get; set; } = 10;
