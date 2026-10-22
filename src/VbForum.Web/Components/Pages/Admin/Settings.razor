@@ -108,7 +108,15 @@
                     <div class="field"><label for="st-from">Absenderadresse</label><input id="st-from" type="email" @bind="_s.MailFrom" placeholder="forum@example.com" /></div>
                     <div class="field"><label for="st-reply">Antwortadresse (optional)</label><input id="st-reply" type="email" @bind="_s.MailReplyTo" /><span class="hint">Wohin Antworten auf Forum-Mails gehen.</span></div>
                 </div>
-                <label class="toggle-row">TLS/SSL verwenden<input type="checkbox" @bind="_s.SmtpSsl" /></label>
+                <div class="field">
+                    <label for="st-sec">Verschlüsselung</label>
+                    <select id="st-sec" @bind="_s.SmtpSecurity">
+                        <option value="auto">Automatisch (Port 465 = SSL/TLS, sonst STARTTLS)</option>
+                        <option value="ssl">SSL/TLS direkt beim Verbinden (meist Port 465)</option>
+                        <option value="starttls">STARTTLS (meist Port 587 oder 25)</option>
+                        <option value="none">Keine (nur im internen Netz)</option>
+                    </select>
+                </div>
                 <div class="row">
                     <input class="input" style="flex:1 1 240px" type="email" placeholder="Test-Empfänger" @bind="_testTo" aria-label="Test-Empfänger" />
                     <button type="button" class="btn" @onclick="TestMail" disabled="@_busy">Testmail senden</button>
@@ -241,10 +249,10 @@
         try
         {
             if (string.IsNullOrWhiteSpace(_testTo)) { _err = "Bitte einen Empfänger angeben."; return; }
-            var ok = await Mail.SendAsync(_testTo, "Testmail", new MailContent("Hallo,",
+            var error = await Mail.TrySendAsync(_testTo, "Testmail", new MailContent("Hallo,",
                 new[] { "wenn du diese Nachricht liest, funktioniert der E-Mail-Versand des Forums." },
                 "Zum Forum", await Mail.AbsoluteUrlAsync("/")));
-            if (ok) _msg = "Testmail wurde verschickt."; else _err = "Versand fehlgeschlagen. Details stehen im Log der Anwendung.";
+            if (error == null) _msg = "Testmail wurde verschickt."; else _err = "Versand fehlgeschlagen: " + error;
         }
         finally { _busy = false; }
     }

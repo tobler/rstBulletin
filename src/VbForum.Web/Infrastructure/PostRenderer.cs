@@ -1,3 +1,4 @@
+using VbForum.Core.Text;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Components;
@@ -40,12 +41,47 @@ public sealed class PostRenderer(BoardCache cache, UrlSigner signer, ForumPaths 
     private List<Smilie>? _smilies;
     private BoardSnapshot? _smilieSnap;
 
-    /// <summary>Nur Smilies, deren Bilddatei unter wwwroot liegt – fehlende bleiben als Text stehen.</summary>
+    private sealed record DefaultSmilie(string Name, string Title, string[] Codes);
+    private List<DefaultSmilie>? _defaults;
+
+    /// <summary>Mitgelieferter Smilie-Satz (wwwroot/images/smilies/default, Twemoji).</summary>
+    private List<DefaultSmilie> Defaults()
+    {
+        if (_defaults != null) return _defaults;
+        try
+        {
+            var json = File.ReadAllText(Path.Combine(paths.WebRoot, "images", "smilies", "default", "smilies.json"));
+            _defaults = System.Text.Json.JsonSerializer.Deserialize<List<DefaultSmilie>>(json,
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
+        }
+        catch { _defaults = new(); }
+        return _defaults;
+    }
+
+    /// <summary>
+    /// Smilies aus vb_smilie. Fehlt die Bilddatei der alten Installation, wird ein passendes Bild aus dem
+    /// mitgelieferten Satz genommen (über den Dateinamen, z. B. smile.png → smile.svg, oder über den Code wie „:)“).
+    /// Ohne Treffer bleibt der Smilie als Text stehen.
+    /// </summary>
     private List<Smilie> AvailableSmilies(BoardSnapshot s)
     {
         if (_smilies != null && ReferenceEquals(_smilieSnap, s)) return _smilies;
-        var list = s.Smilies.Where(x => x.SmiliePath.StartsWith("http", StringComparison.OrdinalIgnoreCase) ||
-            File.Exists(Path.Combine(paths.WebRoot, x.SmiliePath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)))).ToList();
+        var defaults = Defaults();
+        var list = new List<Smilie>();
+        foreach (var x in s.Smilies)
+        {
+            if (x.SmiliePath.StartsWith("http", StringComparison.OrdinalIgnoreCase) ||
+                File.Exists(Path.Combine(paths.WebRoot, x.SmiliePath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar))))
+            {
+                list.Add(x);
+                continue;
+            }
+            var file = Path.GetFileNameWithoutExtension(x.SmiliePath).ToLowerInvariant();
+            var code = HtmlUtil.CleanTitle(x.SmilieText);
+            var d = defaults.FirstOrDefault(d => d.Name == file) ?? defaults.FirstOrDefault(d => d.Codes.Contains(code));
+            if (d != null)
+                list.Add(new Smilie { SmilieId = x.SmilieId, Title = x.Title, SmilieText = x.SmilieText, SmiliePath = $"images/smilies/default/{d.Name}.svg" });
+        }
         _smilieSnap = s;
         return _smilies = list;
     }

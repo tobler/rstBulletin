@@ -1,8 +1,8 @@
 using System.Net;
-using System.Net.Mail;
-using System.Net.Mime;
 using System.Text;
+using MailKit.Security;
 using Microsoft.Extensions.Logging;
+using MimeKit;
 using VbForum.Core.Settings;
 
 namespace VbForum.Data;
@@ -23,50 +23,63 @@ public sealed class MailService(BoardCache cache, AssetStore assets, ILogger<Mai
     public async Task<bool> IsConfiguredAsync() => (await cache.GetAsync()).Settings.SmtpConfigured;
 
     /// <summary>Sendet eine Mail. Gibt false zurück, wenn SMTP nicht eingerichtet ist oder der Versand scheitert.</summary>
-    public async Task<bool> SendAsync(string to, string subject, MailContent content)
+    public async Task<bool> SendAsync(string to, string subject, MailContent content) => await TrySendAsync(to, subject, content) == null;
+
+    /// <summary>Wie SendAsync, liefert aber die Fehlermeldung (null = verschickt) – für die Testmail im Admin-Bereich.</summary>
+    public async Task<string?> TrySendAsync(string to, string subject, MailContent content)
     {
         var s = (await cache.GetAsync()).Settings;
-        if (!s.SmtpConfigured || string.IsNullOrWhiteSpace(to)) return false;
+        if (!s.SmtpConfigured) return "SMTP ist nicht eingerichtet (Server und Absenderadresse fehlen).";
+        if (string.IsNullOrWhiteSpace(to)) return "Kein Empfänger angegeben.";
         try
         {
-            using var client = new SmtpClient(s.SmtpHost, s.SmtpPort)
-            {
-                EnableSsl = s.SmtpSsl,
-                DeliveryMethod = SmtpDeliveryMethod.Network,
-                Timeout = 20000,
-            };
-            if (!string.IsNullOrWhiteSpace(s.SmtpUser))
-                client.Credentials = new NetworkCredential(s.SmtpUser, s.SmtpPassword);
-
             var fromName = string.IsNullOrWhiteSpace(s.MailFromName) ? s.BoardName : s.MailFromName.Trim();
-            using var msg = new MailMessage(new MailAddress(s.MailFrom.Trim(), fromName, Encoding.UTF8), new MailAddress(to.Trim()))
-            {
-                Subject = subject,
-                SubjectEncoding = Encoding.UTF8,
-                HeadersEncoding = Encoding.UTF8,
-            };
-            if (!string.IsNullOrWhiteSpace(s.MailReplyTo)) msg.ReplyToList.Add(new MailAddress(s.MailReplyTo.Trim()));
+            var msg = new MimeMessage();
+            msg.From.Add(new MailboxAddress(fromName, s.MailFrom.Trim()));
+            msg.To.Add(MailboxAddress.Parse(to.Trim()));
+            if (!string.IsNullOrWhiteSpace(s.MailReplyTo)) msg.ReplyTo.Add(MailboxAddress.Parse(s.MailReplyTo.Trim()));
+            msg.Subject = subject;
 
-            // Textversion (für Clients ohne HTML) + HTML-Version mit eingebettetem Logo
-            var text = AlternateView.CreateAlternateViewFromString(RenderText(s, content), Encoding.UTF8, MediaTypeNames.Text.Plain);
+            // HTML mit eingebettetem Logo + Textversion
             var logo = await LogoAsync(s);
-            var html = AlternateView.CreateAlternateViewFromString(RenderHtml(s, subject, content, logo != null ? "cid:logo" : null), Encoding.UTF8, MediaTypeNames.Text.Html);
+            var body = new BodyBuilder { TextBody = RenderText(s, content) };
             if (logo != null)
             {
-                var res = new LinkedResource(new MemoryStream(logo.Data), logo.ContentType) { ContentId = "logo", TransferEncoding = TransferEncoding.Base64 };
-                html.LinkedResources.Add(res);
+                var res = body.LinkedResources.Add("logo" + Extension(logo.ContentType), logo.Data, ContentType.Parse(logo.ContentType));
+                res.ContentId = "logo";
             }
-            msg.AlternateViews.Add(text);
-            msg.AlternateViews.Add(html);
-            await client.SendMailAsync(msg);
-            return true;
+            body.HtmlBody = RenderHtml(s, subject, content, logo != null ? "cid:logo" : null);
+            msg.Body = body.ToMessageBody();
+
+            using var client = new MailKit.Net.Smtp.SmtpClient { Timeout = 20000 };
+            await client.ConnectAsync(s.SmtpHost.Trim(), s.SmtpPort, Security(s));
+            if (!string.IsNullOrWhiteSpace(s.SmtpUser))
+                await client.AuthenticateAsync(s.SmtpUser.Trim(), s.SmtpPassword);
+            await client.SendAsync(msg);
+            await client.DisconnectAsync(true);
+            return null;
         }
         catch (Exception ex)
         {
             log.LogWarning(ex, "Mailversand an {To} fehlgeschlagen", to);
-            return false;
+            return ex.Message;
         }
     }
+
+    /// <summary>Port 465 braucht implizites TLS (SslOnConnect), 587/25 meist STARTTLS.</summary>
+    private static SecureSocketOptions Security(BoardSettings s) => (s.SmtpSecurity ?? "auto").ToLowerInvariant() switch
+    {
+        "ssl" => SecureSocketOptions.SslOnConnect,
+        "starttls" => SecureSocketOptions.StartTls,
+        "none" => SecureSocketOptions.None,
+        _ => s.SmtpPort == 465 ? SecureSocketOptions.SslOnConnect
+             : s.SmtpSsl ? SecureSocketOptions.StartTls : SecureSocketOptions.StartTlsWhenAvailable,
+    };
+
+    private static string Extension(string contentType) => contentType switch
+    {
+        "image/png" => ".png", "image/jpeg" => ".jpg", "image/gif" => ".gif", "image/webp" => ".webp", _ => ""
+    };
 
     /// <summary>HTML für die Vorschau im Admin-Bereich (Logo als data:-URL).</summary>
     public async Task<string> PreviewAsync(string subject, MailContent content)

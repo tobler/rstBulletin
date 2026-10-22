@@ -112,6 +112,12 @@ public sealed class Installer(Db db, Schema schema, UserRepository users)
 
             await c.ExecuteAsync($"INSERT INTO {t.UserTitle} (minposts, title) VALUES (0, 'Neues Mitglied'), (50, 'Mitglied'), (500, 'Erfahrenes Mitglied')");
 
+            // Standard-Smilies (Bilder liegen unter wwwroot/images/smilies/default)
+            var order = 1;
+            foreach (var sm in DefaultSmilies)
+                await c.ExecuteAsync($"INSERT INTO {t.Smilie} (title, smilietext, smiliepath, imagecategoryid, displayorder) VALUES (@title, @code, @path, 1, @order)",
+                    new { title = VbText.ForStorage(sm.Title), code = sm.Code, path = $"images/smilies/default/{sm.File}.svg", order = order++ });
+
             // active, allowposting, bbcode, images, smilies, icons, countposts, indexposts, forumjump (+ canhavethreads)
             const long baseOpts = 1 | 2 | 64 | 128 | 512 | 1024 | 4096 | 16384 | 65536;
             await c.ExecuteAsync($"""
@@ -126,6 +132,38 @@ public sealed class Installer(Db db, Schema schema, UserRepository users)
         var adminId = await users.CreateAsync(n.AdminName, n.AdminEmail, n.AdminPassword, 6, n.Ip, syncLegacy: true);
         await using (var c = await db.OpenAsync())
             await c.ExecuteAsync($"INSERT INTO {db.T.Administrator} (userid, adminpermissions) VALUES (@adminId, 0)", new { adminId });
+    }
+
+    /// <summary>Mitgelieferte Smilies (Twemoji, wwwroot/images/smilies/default).</summary>
+    public static readonly (string Title, string Code, string File)[] DefaultSmilies =
+    {
+        ("Lächeln", ":)", "smile"), ("Traurig", ":(", "frown"), ("Grinsen", ":D", "biggrin"), ("Zwinkern", ";)", "wink"),
+        ("Zunge", ":p", "tongue"), ("Cool", ":cool:", "cool"), ("Augenrollen", ":rolleyes:", "rolleyes"), ("Wütend", ":mad:", "mad"),
+        ("Erstaunt", ":eek:", "eek"), ("Verwirrt", ":confused:", "confused"), ("Verlegen", ":o", "redface"), ("Lachtränen", ":lol:", "lol"),
+        ("Weinen", ":cry:", "cry"), ("Neutral", ":|", "neutral"), ("Teuflisch", ":evil:", "evil"), ("Engel", ":angel:", "angel"),
+        ("Verliebt", ":love:", "love"), ("Nachdenklich", ":think:", "thinking"), ("Daumen hoch", ":thumbsup:", "thumbsup"),
+        ("Daumen runter", ":thumbsdown:", "thumbsdown"), ("Applaus", ":clap:", "clap"), ("Prost", ":beer:", "beer"),
+        ("Herz", ":heart:", "heart"), ("Idee", ":idea:", "idea"), ("Party", ":party:", "party"), ("Winken", ":wave:", "wave"),
+    };
+
+    /// <summary>Standard-Smilies, deren Code es in vb_smilie noch nicht gibt.</summary>
+    public async Task<List<(string Title, string Code, string File)>> MissingDefaultSmiliesAsync()
+    {
+        await using var c = await db.OpenAsync();
+        var codes = (await c.QueryAsync<string>($"SELECT smilietext FROM {db.T.Smilie}")).Select(HtmlUtil.CleanTitle).ToHashSet();
+        return DefaultSmilies.Where(x => !codes.Contains(x.Code)).ToList();
+    }
+
+    /// <summary>Fehlende Standard-Smilies in vb_smilie eintragen (bestehende bleiben unverändert).</summary>
+    public async Task<int> AddMissingDefaultSmiliesAsync()
+    {
+        var missing = await MissingDefaultSmiliesAsync();
+        await using var c = await db.OpenAsync();
+        var order = await c.ExecuteScalarAsync<int>($"SELECT IFNULL(MAX(displayorder), 0) FROM {db.T.Smilie}");
+        foreach (var sm in missing)
+            await c.ExecuteAsync($"INSERT INTO {db.T.Smilie} (title, smilietext, smiliepath, imagecategoryid, displayorder) VALUES (@title, @code, @path, 1, @order)",
+                new { title = VbText.ForStorage(sm.Title), code = sm.Code, path = $"images/smilies/default/{sm.File}.svg", order = ++order });
+        return missing.Count;
     }
 
     private static IEnumerable<string> LoadSchema(string prefix)

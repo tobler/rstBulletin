@@ -12,6 +12,8 @@ board can keep running in parallel until you switch over.
 ## Features
 
 - Forums with sub-forums, threads and posts. Posts are written in BBCode, with a toolbar, preview, smilies and drafts.
+- Announcements (`vb_announcement`) for all forums or one forum and its sub-forums, with start and end date.
+- HTML e-mails with logo, sent via SMTP with SSL/TLS (port 465) or STARTTLS (MailKit).
 - Image attachments are stored as blobs in the database, with thumbnails and a lightbox.
 - vB permission model:
   - Group permissions are inherited along the forum tree, and secondary groups (`membergroupids`) count.
@@ -209,7 +211,8 @@ docker run -d --name rstbulletin -p 8080:8080 \
 - With the `DB_*` environment variables set, the container keeps **no state of its own**. Cookie encryption keys,
   logo, favicon and all settings live in the database, so a redeploy keeps everyone logged in. A volume on `/data` is
   optional and only keeps the external-image cache warm.
-- Smilie images from an old vB installation can be mounted read-only to `/app/wwwroot/images/smilies`.
+- A default smilie set is built in. Original smilie images from an old vB installation can be mounted read-only to
+  `/app/wwwroot/images/smilies` if you want to keep them.
 - Health check: `GET /healthz` returns 200, or 503 when the database is unreachable. The image has a built-in
   `HEALTHCHECK`.
 - Put it behind a reverse proxy that passes WebSocket upgrades and `X-Forwarded-For`/`X-Forwarded-Proto` (see the nginx
@@ -237,8 +240,10 @@ This directory contains:
 
 ## After going live
 
-1. **Smilies.** When adopting a vB board, copy the image files from the old installation (`images/smilies/…`) to
-   `wwwroot/images/smilies/`. Missing files are shown as text.
+1. **Smilies.** A default set ([Twemoji](https://github.com/jdecked/twemoji)) is built in. If an image from the old
+   installation is missing, the matching default image is used, by file name (`smile.png`) or by code (`:)`).
+   *Admin › Datenbank & Wartung* can add the missing default smilies to `vb_smilie`. To keep the original images,
+   copy them to `wwwroot/images/smilies/`.
 2. **SMTP.** Configure it under *Admin › Einstellungen* and send a test mail. It is needed for registration, password
    reset and subscriptions.
 3. **Base URL.** Check it, because it is used for links in e-mails.
@@ -252,3 +257,6 @@ subscriptions, ignore list. The vB data for these is left untouched and can be s
 ## License
 
 GNU General Public License v3.0. See [LICENSE](LICENSE).
+
+The default smilies in `src/VbForum.Web/wwwroot/images/smilies/default` are Twemoji graphics, © Twitter, Inc and other
+contributors and © jdecked and other contributors, licensed under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/).

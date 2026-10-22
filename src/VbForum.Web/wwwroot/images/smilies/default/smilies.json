@@ -1,0 +1,255 @@
+[
+ {
+  "name": "smile",
+  "title": "Lächeln",
+  "codes": [
+   ":)",
+   ":-)"
+  ]
+ },
+ {
+  "name": "frown",
+  "title": "Traurig",
+  "codes": [
+   ":(",
+   ":-("
+  ]
+ },
+ {
+  "name": "biggrin",
+  "title": "Grinsen",
+  "codes": [
+   ":D",
+   ":-D",
+   ":grin:"
+  ]
+ },
+ {
+  "name": "wink",
+  "title": "Zwinkern",
+  "codes": [
+   ";)",
+   ";-)"
+  ]
+ },
+ {
+  "name": "tongue",
+  "title": "Zunge",
+  "codes": [
+   ":p",
+   ":P",
+   ":-p",
+   ":-P"
+  ]
+ },
+ {
+  "name": "cool",
+  "title": "Cool",
+  "codes": [
+   ":cool:",
+   "8)"
+  ]
+ },
+ {
+  "name": "rolleyes",
+  "title": "Augenrollen",
+  "codes": [
+   ":rolleyes:",
+   ":roll:"
+  ]
+ },
+ {
+  "name": "mad",
+  "title": "Wütend",
+  "codes": [
+   ":mad:",
+   ":x",
+   ":-x"
+  ]
+ },
+ {
+  "name": "eek",
+  "title": "Erstaunt",
+  "codes": [
+   ":eek:",
+   ":shock:"
+  ]
+ },
+ {
+  "name": "confused",
+  "title": "Verwirrt",
+  "codes": [
+   ":confused:",
+   ":?",
+   ":-?"
+  ]
+ },
+ {
+  "name": "redface",
+  "title": "Verlegen",
+  "codes": [
+   ":o",
+   ":oops:",
+   ":redface:"
+  ]
+ },
+ {
+  "name": "lol",
+  "title": "Lachtränen",
+  "codes": [
+   ":lol:"
+  ]
+ },
+ {
+  "name": "cry",
+  "title": "Weinen",
+  "codes": [
+   ":cry:",
+   ":'("
+  ]
+ },
+ {
+  "name": "neutral",
+  "title": "Neutral",
+  "codes": [
+   ":|",
+   ":-|"
+  ]
+ },
+ {
+  "name": "evil",
+  "title": "Teuflisch",
+  "codes": [
+   ":evil:",
+   ":twisted:"
+  ]
+ },
+ {
+  "name": "angel",
+  "title": "Engel",
+  "codes": [
+   ":angel:"
+  ]
+ },
+ {
+  "name": "kiss",
+  "title": "Kuss",
+  "codes": [
+   ":kiss:"
+  ]
+ },
+ {
+  "name": "love",
+  "title": "Verliebt",
+  "codes": [
+   ":love:"
+  ]
+ },
+ {
+  "name": "sleep",
+  "title": "Müde",
+  "codes": [
+   ":sleep:",
+   ":zzz:"
+  ]
+ },
+ {
+  "name": "sick",
+  "title": "Übel",
+  "codes": [
+   ":sick:"
+  ]
+ },
+ {
+  "name": "thinking",
+  "title": "Nachdenklich",
+  "codes": [
+   ":think:",
+   ":hmm:"
+  ]
+ },
+ {
+  "name": "thumbsup",
+  "title": "Daumen hoch",
+  "codes": [
+   ":thumbsup:",
+   ":top:",
+   ":+1:"
+  ]
+ },
+ {
+  "name": "thumbsdown",
+  "title": "Daumen runter",
+  "codes": [
+   ":thumbsdown:",
+   ":flop:",
+   ":-1:"
+  ]
+ },
+ {
+  "name": "clap",
+  "title": "Applaus",
+  "codes": [
+   ":clap:"
+  ]
+ },
+ {
+  "name": "wave",
+  "title": "Winken",
+  "codes": [
+   ":wave:",
+   ":hi:"
+  ]
+ },
+ {
+  "name": "beer",
+  "title": "Prost",
+  "codes": [
+   ":beer:",
+   ":prost:"
+  ]
+ },
+ {
+  "name": "heart",
+  "title": "Herz",
+  "codes": [
+   ":heart:",
+   "<3"
+  ]
+ },
+ {
+  "name": "idea",
+  "title": "Idee",
+  "codes": [
+   ":idea:"
+  ]
+ },
+ {
+  "name": "exclaim",
+  "title": "Ausrufezeichen",
+  "codes": [
+   ":!:"
+  ]
+ },
+ {
+  "name": "question",
+  "title": "Frage",
+  "codes": [
+   ":?:"
+  ]
+ },
+ {
+  "name": "arrow",
+  "title": "Pfeil",
+  "codes": [
+   ":arrow:"
+  ]
+ },
+ {
+  "name": "party",
+  "title": "Party",
+  "codes": [
+   ":party:"
+  ]
+ }
+]

@@ -31,11 +31,16 @@
             <button type="button" aria-label="Zitat" @onclick='() => Wrap("[quote]", "[/quote]")'><Icon Name="quote" /></button>
             <button type="button" aria-label="Code" @onclick='() => Wrap("[code]", "[/code]")'><Icon Name="code" /></button>
             <button type="button" aria-label="Liste" @onclick='() => Wrap("[list]\n[*]", "\n[/list]")'><Icon Name="list" /></button>
-            @foreach (var s in _smilies)
+            @foreach (var s in _smilies.Take(_allSmilies ? _smilies.Count : 6))
             {
                 <button type="button" aria-label="Smilie @s.Title" title="@s.Title" @onclick="() => Insert(HtmlUtil.CleanTitle(s.SmilieText))">
                     <img src="@(s.SmiliePath.StartsWith('/') || s.SmiliePath.StartsWith("http") ? s.SmiliePath : "/" + s.SmiliePath)" alt="" style="height:20px" />
                 </button>
+            }
+            @if (_smilies.Count > 6)
+            {
+                <button type="button" style="width:auto;padding:0 8px;font-size:13px;font-weight:600" aria-expanded="@_allSmilies"
+                        title="@(_allSmilies ? "Weniger Smilies" : "Alle Smilies")" @onclick="() => _allSmilies = !_allSmilies">@(_allSmilies ? "weniger" : $"+{_smilies.Count - 6}")</button>
             }
             <span class="spacer"></span>
             <button type="button" style="width:auto;padding:0 10px;font-size:13px;font-weight:600" @onclick="TogglePreview">@(_preview ? "Bearbeiten" : "Vorschau")</button>
@@ -130,6 +135,7 @@
     private BoardSettings? _settings;
     private string _accept = "";
     private List<Smilie> _smilies = new();
+    private bool _allSmilies;
     private readonly List<AttachmentRepository.Upload> _uploads = new();
     private List<Attachment> _existing = new();
     private readonly HashSet<long> _remove = new();
@@ -144,7 +150,7 @@
     {
         var snap = await Cache.GetAsync();
         _settings = snap.Settings;
-        _smilies = (await Renderer.SmiliesAsync()).Take(12).ToList();
+        _smilies = (await Renderer.SmiliesAsync()).Take(60).ToList();
         _accept = string.Join(",", snap.Settings.AllowedExtensions.Select(e => "." + e));
         var user = await Current.GetAsync();
         var perms = new Permissions(snap);

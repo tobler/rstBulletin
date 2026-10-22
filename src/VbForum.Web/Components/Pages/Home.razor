@@ -3,6 +3,7 @@
 @inject CurrentUser Current
 @inject ThreadRepository Threads
 @inject UserRepository Users
+@inject AnnouncementRepository Announcements
 
 <PageTitle>@_snap?.Settings.BoardName</PageTitle>
 
@@ -33,6 +34,11 @@
                 </div>
             }
         </div>
+
+        @if (_announcements.Count > 0)
+        {
+            <section class="card" aria-label="Ankündigungen"><AnnouncementList Items="_announcements" /></section>
+        }
 
         @foreach (var sec in _sections)
         {
@@ -73,6 +79,7 @@
     private ForumUser? _user;
     private List<Section> _sections = new();
     private long _online;
+    private List<AnnouncementRepository.Announcement> _announcements = new();
 
     private bool _loaded;
 
@@ -102,5 +109,6 @@
         }
         if (loose.Count > 0) _sections.Insert(0, new Section(0, "Foren", loose));
         _online = await Users.OnlineCountAsync();
+        _announcements = await Announcements.ActiveGlobalAsync(_user.UserId);
     }
 }

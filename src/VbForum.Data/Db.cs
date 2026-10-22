@@ -112,6 +112,8 @@ public sealed class Tables(string p)
     public string Administrator => N("administrator");
     public string ThreadRedirect => N("threadredirect");
     public string ThreadViews => N("threadviews");
+    public string Announcement => N("announcement");
+    public string AnnouncementRead => N("announcementread");
 
     public const string OwnSetting = "`vbf_setting`";
     public const string OwnUserAuth = "`vbf_userauth`";

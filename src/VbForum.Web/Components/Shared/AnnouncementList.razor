@@ -1,0 +1,23 @@
+@* Ankündigungen oberhalb der Themenliste bzw. auf der Startseite *@
+@foreach (var a in Items)
+{
+    <div class="thread-row announcement-row">
+        <div class="thread-main">
+            <span class="announce-icon" aria-hidden="true"><Icon Name="megaphone" Size="18" /></span>
+            <div class="stack" style="gap:3px;min-width:0">
+                <div class="thread-title-line">
+                    <span class="pill pill-accent">Ankündigung</span>
+                    @if (!a.IsRead) { <span class="dot" title="Neu"></span> }
+                    <a href="/announcement/@a.AnnouncementId" class="thread-title @(a.IsRead ? "" : "unread")">@a.DisplayTitle</a>
+                </div>
+                <span class="thread-sub">von @HtmlUtil.CleanTitle(a.Username) · @ForumTime.Date(a.StartDate)</span>
+            </div>
+        </div>
+        <div class="thread-counts">@ForumTime.Number(a.Views) Aufrufe</div>
+        <div class="thread-last"><span class="muted">gültig bis @ForumTime.Date(a.EndDate)</span></div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<AnnouncementRepository.Announcement> Items { get; set; } = Array.Empty<AnnouncementRepository.Announcement>();
+}

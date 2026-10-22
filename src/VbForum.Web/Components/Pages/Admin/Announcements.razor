@@ -1,0 +1,177 @@
+@page "/admin/announcements"
+@attribute [Authorize(Policy = "Admin")]
+@rendermode InteractiveServer
+@inject BoardCache Cache
+@inject AnnouncementRepository Repo
+@inject PostRenderer Renderer
+@inject CurrentUser Current
+@inject TokenRepository Audit
+
+<PageTitle>Ankündigungen – Administration</PageTitle>
+
+<main class="page container">
+    <AdminShell Active="announcements" Title="Ankündigungen" Subtitle="Erscheinen oben in der Themenliste – in allen Foren oder in einem Forum samt Unterforen">
+        <Actions><button type="button" class="btn btn-primary" @onclick="New"><Icon Name="plus" />Neue Ankündigung</button></Actions>
+        <ChildContent>
+            @if (_msg != null) { <div class="alert alert-ok" role="status">@_msg</div> }
+            <section class="card">
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead><tr><th>Titel</th><th>Wo</th><th>Gültig</th><th>Status</th><th class="num">Aufrufe</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var a in _list)
+                            {
+                                var now = ForumTime.Now;
+                                <tr>
+                                    <td><a href="/announcement/@a.AnnouncementId"><strong>@a.DisplayTitle</strong></a><div class="small muted">von @HtmlUtil.CleanTitle(a.Username)</div></td>
+                                    <td class="small">@ForumName(a.ForumId)</td>
+                                    <td class="small nowrap">@ForumTime.Date(a.StartDate) – @ForumTime.Date(a.EndDate)</td>
+                                    <td>@if (a.IsActive(now)) { <span class="pill pill-accent">Aktiv</span> } else if (a.StartDate > now) { <span class="pill">Geplant</span> } else { <span class="pill">Abgelaufen</span> }</td>
+                                    <td class="num">@ForumTime.Number(a.Views)</td>
+                                    <td class="nowrap">
+                                        <button type="button" class="btn btn-sm" @onclick="() => Edit(a)">Bearbeiten</button>
+                                        @if (_confirm == a.AnnouncementId)
+                                        {
+                                            <button type="button" class="btn btn-sm btn-danger" @onclick="() => DeleteAsync(a)">Wirklich löschen</button>
+                                        }
+                                        else
+                                        {
+                                            <button type="button" class="btn btn-sm btn-ghost btn-danger" title="Löschen" @onclick="() => _confirm = a.AnnouncementId"><Icon Name="trash" Size="16" /></button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                            @if (_list.Count == 0) { <tr><td colspan="6" class="empty">Noch keine Ankündigungen.</td></tr> }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </ChildContent>
+    </AdminShell>
+</main>
+
+@if (_edit != null)
+{
+    <div class="modal-back" @onclick="() => _edit = null">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="an-title" style="width:min(760px,100%)" @onclick:stopPropagation>
+            <h2 id="an-title" class="card-title">@(_edit.Id > 0 ? "Ankündigung bearbeiten" : "Neue Ankündigung")</h2>
+            @if (_err != null) { <div class="alert alert-err">@_err</div> }
+            <div class="field"><label for="an-t">Titel</label><input id="an-t" @bind="_edit.Title" maxlength="250" /></div>
+            <div class="form-grid">
+                <div class="field">
+                    <label for="an-f">Anzeigen in</label>
+                    <select id="an-f" @bind="_edit.ForumId">
+                        <option value="-1">Allen Foren (und auf der Startseite)</option>
+                        @foreach (var f in _snap!.Flatten())
+                        {
+                            <option value="@f.ForumId">@(new string(' ', f.Depth * 3))@f.DisplayTitle</option>
+                        }
+                    </select>
+                    <span class="hint">Ein Forum gilt auch für seine Unterforen.</span>
+                </div>
+                <div class="field"><label for="an-s">Von</label><input id="an-s" type="date" @bind="_edit.Start" /></div>
+                <div class="field"><label for="an-e">Bis einschließlich</label><input id="an-e" type="date" @bind="_edit.End" /></div>
+            </div>
+            <div class="field">
+                <div class="row" style="justify-content:space-between">
+                    <label for="an-x">Text (BBCode)</label>
+                    <button type="button" class="btn btn-sm btn-ghost" @onclick="TogglePreview">@(_preview == null ? "Vorschau" : "Bearbeiten")</button>
+                </div>
+                @if (_preview != null)
+                {
+                    <div class="card card-pad announcement-body" style="min-height:160px">@_preview</div>
+                }
+                else
+                {
+                    <textarea id="an-x" class="editor-text" rows="10" @bind="_edit.Text" placeholder="[b]Wichtig:[/b] …"></textarea>
+                }
+            </div>
+            <p class="small muted" style="margin:0">Nach dem Speichern gilt eine geänderte Ankündigung für alle wieder als ungelesen.</p>
+            <div class="form-actions">
+                <button type="button" class="btn" @onclick="() => _edit = null">Abbrechen</button>
+                <button type="button" class="btn btn-primary" @onclick="SaveAsync">Speichern</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "edit")] public long? EditQ { get; set; }
+
+    private sealed class EditModel
+    {
+        public long Id { get; set; }
+        public string Title { get; set; } = "";
+        public string Text { get; set; } = "";
+        public int ForumId { get; set; } = -1;
+        public DateTime Start { get; set; } = DateTime.Today;
+        public DateTime End { get; set; } = DateTime.Today.AddDays(30);
+    }
+
+    private BoardSnapshot? _snap;
+    private List<AnnouncementRepository.Announcement> _list = new();
+    private EditModel? _edit;
+    private MarkupString? _preview;
+    private long _confirm;
+    private string? _msg, _err;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        if (EditQ is long id && _list.FirstOrDefault(a => a.AnnouncementId == id) is { } a) Edit(a);
+    }
+
+    private async Task LoadAsync()
+    {
+        _snap = await Cache.GetAsync();
+        _list = await Repo.ListAllAsync();
+    }
+
+    private string ForumName(int id) => id <= 0 ? "Alle Foren" : _snap!.Forum(id)?.DisplayTitle ?? $"Forum #{id} (gelöscht)";
+
+    private void New() { _err = null; _preview = null; _edit = new EditModel(); }
+
+    private void Edit(AnnouncementRepository.Announcement a)
+    {
+        _err = null; _preview = null;
+        _edit = new EditModel
+        {
+            Id = a.AnnouncementId, Title = a.DisplayTitle, Text = HtmlUtil.DecodeNumericEntities(a.PageText), ForumId = a.ForumId,
+            Start = ForumTime.Local(a.StartDate).Date, End = ForumTime.Local(a.EndDate).Date,
+        };
+    }
+
+    private async Task TogglePreview()
+    {
+        if (_preview != null) { _preview = null; return; }
+        var forum = _edit!.ForumId > 0 ? _snap!.Forum(_edit.ForumId) : null;
+        _preview = Renderer.Render(_edit.Text, await Renderer.ContextAsync(forum));
+    }
+
+    private async Task SaveAsync()
+    {
+        _err = null;
+        var e = _edit!;
+        if (string.IsNullOrWhiteSpace(e.Title)) { _err = "Bitte einen Titel eingeben."; return; }
+        if (string.IsNullOrWhiteSpace(e.Text)) { _err = "Bitte einen Text eingeben."; return; }
+        if (e.End < e.Start) { _err = "Das Enddatum liegt vor dem Startdatum."; return; }
+        // Start um 0:00, Ende um 23:59:59 in der Zeitzone des Forums
+        var start = ForumTime.ToUnix(e.Start.Date);
+        var end = ForumTime.ToUnix(e.End.Date.AddDays(1)) - 1;
+        var me = await Current.GetAsync();
+        var id = await Repo.SaveAsync(e.Id, e.Title, e.Text, e.ForumId, start, end, e.Id > 0 ? _list.First(a => a.AnnouncementId == e.Id).UserId : me.UserId);
+        await Audit.LogAsync(me, e.Id > 0 ? "announcement.edit" : "announcement.create", $"{id} {e.Title}", "");
+        _msg = $"„{e.Title}“ gespeichert.";
+        _edit = null;
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync(AnnouncementRepository.Announcement a)
+    {
+        _confirm = 0;
+        await Repo.DeleteAsync(a.AnnouncementId);
+        await Audit.LogAsync(await Current.GetAsync(), "announcement.delete", $"{a.AnnouncementId} {a.DisplayTitle}", "");
+        _msg = $"„{a.DisplayTitle}“ gelöscht.";
+        await LoadAsync();
+    }
+}

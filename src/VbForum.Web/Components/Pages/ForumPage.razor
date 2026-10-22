@@ -4,6 +4,7 @@
 @inject CurrentUser Current
 @inject ThreadRepository Threads
 @inject NavigationManager Nav
+@inject AnnouncementRepository Announcements
 
 <PageTitle>@(_forum?.DisplayTitle ?? "Forum") – @_snap?.Settings.BoardName</PageTitle>
 
@@ -118,6 +119,7 @@
                     <span style="flex:999 1 380px">Thema</span><span style="flex:0 0 150px">Antworten / Aufrufe</span><span style="flex:1 1 220px">Letzte Antwort</span>
                 </div>
 
+                <AnnouncementList Items="_announcements" />
                 @foreach (var t in _sticky.Concat(_result.Items))
                 {
                     <ThreadRow Thread="t" PostsPerPage="_snap.Settings.PostsPerPage" />
@@ -157,6 +159,7 @@
     private Forum? _forum;
     private List<ForumSummary> _children = new();
     private List<ForumThread> _sticky = new();
+    private List<AnnouncementRepository.Announcement> _announcements = new();
     private PagedResult<ForumThread>? _result;
     private int _page = 1;
     private bool _canPost, _titlesOnly;
@@ -210,6 +213,7 @@
         }
         bool mod = perms.IsModerator(_user, f);
         _page = Math.Max(1, PageQ ?? 1);
+        if (_page == 1 && perms.CanSeeForum(_user, f)) _announcements = await Announcements.ActiveForForumAsync(f.ParentIds, _user.UserId);
         var sort = SortKey switch
         {
             "dateline" => ThreadSort.Dateline, "replies" => ThreadSort.Replies, "views" => ThreadSort.Views, "title" => ThreadSort.Title, _ => ThreadSort.LastPost

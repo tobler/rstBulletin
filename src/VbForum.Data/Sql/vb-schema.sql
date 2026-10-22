@@ -561,3 +561,23 @@ CREATE TABLE IF NOT EXISTS `{prefix}threadviews` (
   `threadid` int(10) unsigned NOT NULL DEFAULT 0,
   KEY `threadid` (`threadid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS `{prefix}announcement` (
+  `announcementid` smallint(5) unsigned NOT NULL AUTO_INCREMENT,
+  `title` varchar(250) NOT NULL DEFAULT '',
+  `userid` int(10) unsigned NOT NULL DEFAULT 0,
+  `startdate` int(10) unsigned NOT NULL DEFAULT 0,
+  `enddate` int(10) unsigned NOT NULL DEFAULT 0,
+  `pagetext` mediumtext DEFAULT NULL,
+  `forumid` smallint(6) NOT NULL DEFAULT 0,
+  `views` int(10) unsigned NOT NULL DEFAULT 0,
+  `announcementoptions` int(10) unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`announcementid`),
+  KEY `forumid` (`forumid`),
+  KEY `startdate` (`enddate`,`forumid`,`startdate`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS `{prefix}announcementread` (
+  `announcementid` int(10) unsigned NOT NULL DEFAULT 0,
+  `userid` int(10) unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`announcementid`,`userid`),
+  KEY `userid` (`userid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -1,0 +1,97 @@
+@page "/announcement/{Id:long}"
+@inject BoardCache Cache
+@inject CurrentUser Current
+@inject AnnouncementRepository Announcements
+@inject UserRepository Users
+@inject PostRenderer Renderer
+
+<PageTitle>@(_a?.DisplayTitle ?? "Ankündigung") – @_snap?.Settings.BoardName</PageTitle>
+
+@if (!_loaded) { return; }
+<main class="page container">
+    @if (_a == null)
+    {
+        <div class="card card-pad">
+            <h1 class="card-title">Ankündigung nicht gefunden</h1>
+            <p class="muted">Die Ankündigung existiert nicht (mehr) oder du darfst sie nicht sehen.</p>
+        </div>
+    }
+    else
+    {
+        <nav aria-label="Brotkrumen" class="breadcrumb">
+            <a href="/">Foren</a>
+            @if (_forum != null)
+            {
+                @foreach (var b in _snap!.Breadcrumb(_forum)) { <span aria-hidden="true">›</span><a href="@Links.Forum(b)">@b.DisplayTitle</a> }
+            }
+            <span aria-hidden="true">›</span><span class="current">Ankündigung</span>
+        </nav>
+
+        <div class="page-head">
+            <div>
+                <h1>@_a.DisplayTitle</h1>
+                <p>
+                    Ankündigung @(_forum == null ? "für alle Foren" : $"in „{_forum.DisplayTitle}“") ·
+                    gültig vom @ForumTime.Date(_a.StartDate) bis @ForumTime.Date(_a.EndDate) · @ForumTime.Number(_a.Views) Aufrufe
+                </p>
+            </div>
+            @if (_user!.IsAdmin) { <a class="btn" href="/admin/announcements?edit=@_a.AnnouncementId"><Icon Name="edit" />Bearbeiten</a> }
+        </div>
+
+        @if (!_a.IsActive(ForumTime.Now))
+        {
+            <div class="alert alert-info">Diese Ankündigung ist derzeit nicht sichtbar (@(_a.StartDate > ForumTime.Now ? "beginnt erst später" : "abgelaufen")). Nur Administratoren sehen sie hier.</div>
+        }
+
+        <article class="post">
+            <aside class="post-aside">
+                <Avatar UserId="_a.UserId" Name="@HtmlUtil.CleanTitle(_a.Username)" HasAvatar="@(_author?.HasCustomAvatar > 0)" Revision="@(_author?.AvatarRevision ?? 0)" Size="48" />
+                <div class="post-author">
+                    <UserName Class="name" UserId="_a.UserId" Name="@HtmlUtil.CleanTitle(_a.Username)" IsAdmin="_user.IsAdmin" />
+                </div>
+            </aside>
+            <div class="post-main">
+                <div class="post-meta"><span>@ForumTime.Full(_a.StartDate)</span></div>
+                <div class="post-body announcement-body">@_html</div>
+                @if (!string.IsNullOrEmpty(_signature.Value)) { <div class="signature">@_signature</div> }
+            </div>
+        </article>
+    }
+</main>
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private bool _loaded;
+    private BoardSnapshot? _snap;
+    private ForumUser? _user;
+    private AnnouncementRepository.Announcement? _a;
+    private Forum? _forum;
+    private UserRow? _author;
+    private MarkupString _html, _signature;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { await LoadAsync(); } finally { _loaded = true; }
+    }
+
+    private async Task LoadAsync()
+    {
+        _snap = await Cache.GetAsync();
+        _user = await Current.GetAsync();
+        var a = await Announcements.GetAsync(Id);
+        if (a == null) return;
+        var perms = new Permissions(_snap);
+        if (a.ForumId > 0)
+        {
+            _forum = _snap.Forum(a.ForumId);
+            if (_forum == null || !perms.CanSeeForum(_user, _forum)) return;
+        }
+        if (!a.IsActive(ForumTime.Now) && !_user.IsAdmin) return;
+        _a = a;
+        _author = a.UserId > 0 ? await Users.GetAsync(a.UserId) : null;
+        _html = Renderer.Render(a.PageText, await Renderer.ContextAsync(_forum));
+        if ((a.AnnouncementOptions & 16) != 0 && _author != null) _signature = await Renderer.RenderSignatureAsync(await Users.SignatureAsync(_author.UserId));
+        await Announcements.ViewedAsync(a.AnnouncementId, _user.UserId);
+    }
+}

@@ -10,6 +10,8 @@
 @inject CurrentUser Current
 @inject TokenRepository Audit
 @inject ForumPaths Paths
+@inject Installer Installer
+@inject PostRenderer Renderer
 
 <PageTitle>Datenbank – Administration</PageTitle>
 
@@ -46,6 +48,21 @@
                 <button type="button" class="btn btn-primary" @onclick="Save" disabled="@_busy">Speichern</button>
             </div>
             <span class="hint">Die Verbindung wird in <code>App_Data/dbsettings.json</code> gespeichert (nur für den Server-Benutzer lesbar). Änderungen wirken sofort.</span>
+            }
+        </section>
+
+        <section class="card card-pad stack">
+            <h2 class="card-title">Smilies</h2>
+            <div class="row" style="gap:6px;flex-wrap:wrap">
+                @foreach (var sm in _smilies) { <img src="/@sm.SmiliePath.TrimStart('/')" alt="@sm.SmilieText" title="@HtmlUtil.CleanTitle(sm.SmilieText) – @HtmlUtil.CleanTitle(sm.Title)" style="height:24px" /> }
+            </div>
+            <p class="small muted" style="margin:0">
+                @ForumTime.Number(_smilies.Count) Smilies mit Bild. Fehlt die Bilddatei aus der alten Installation, wird automatisch ein passendes Bild aus dem mitgelieferten Satz (Twemoji) verwendet.
+                @if (_missingSmilies > 0) { <span>Vom mitgelieferten Satz sind @_missingSmilies Smilies noch nicht eingetragen.</span> }
+            </p>
+            @if (_missingSmilies > 0)
+            {
+                <div><button type="button" class="btn" @onclick="AddSmilies">@_missingSmilies Standard-Smilies ergänzen</button></div>
             }
         </section>
 
@@ -114,6 +131,16 @@
     private bool _fulltext, _busy;
     private long _imgCache;
     private string? _msg, _err;
+    private List<Smilie> _smilies = new();
+    private int _missingSmilies;
+
+    private async Task AddSmilies()
+    {
+        var n = await Installer.AddMissingDefaultSmiliesAsync();
+        Cache.Invalidate();
+        _msg = $"{n} Smilies ergänzt.";
+        await LoadInfoAsync();
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -130,6 +157,8 @@
             _snap = await Cache.GetAsync();
             _tables = await Schema.TablesAsync();
             _fulltext = await Schema.HasPostFulltextAsync() && await Schema.HasThreadFulltextAsync();
+            _smilies = await Renderer.SmiliesAsync();
+            _missingSmilies = (await Installer.MissingDefaultSmiliesAsync()).Count;
             _imgCache = Directory.Exists(Paths.ImageCache) ? Directory.GetFiles(Paths.ImageCache).Sum(f => new FileInfo(f).Length) : 0;
         }
         catch (Exception ex) { _err = ex.Message; }

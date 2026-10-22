@@ -50,6 +50,8 @@ public sealed class BoardSettings
     public string SmtpUser { get; set; } = "";
     public string SmtpPassword { get; set; } = "";
     public bool SmtpSsl { get; set; } = true;
+    /// <summary>„auto“ (Port 465 = SSL, sonst STARTTLS), „ssl“ (implizites TLS), „starttls“ oder „none“.</summary>
+    public string SmtpSecurity { get; set; } = "auto";
     public string MailFrom { get; set; } = "";
     /// <summary>Angezeigter Absendername (leer = Name des Forums).</summary>
     public string MailFromName { get; set; } = "";

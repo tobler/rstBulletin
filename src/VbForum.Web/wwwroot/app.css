@@ -350,3 +350,8 @@ body:has(.admin-shell) .site-footer .container { max-width: none; }
   .admin-shell { flex-wrap: nowrap; }
   .admin-shell > .side-nav { flex: 0 0 220px; position: sticky; top: 16px; }
 }
+
+/* Ankündigungen */
+.announcement-row { background: var(--accent-soft); }
+.announce-icon { width: 36px; height: 36px; flex: 0 0 36px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; }
+.announcement-body { font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
