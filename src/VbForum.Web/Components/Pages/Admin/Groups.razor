@@ -17,17 +17,19 @@
             <section class="card">
                 <div class="table-wrap">
                     <table class="table">
-                        <thead><tr><th>#</th><th>Gruppe</th><th>Benutzertitel</th><th class="num">Mitglieder</th><th>Rolle</th><th></th></tr></thead>
+                        <thead><tr><th>#</th><th>Gruppe</th><th>Benutzertitel</th><th class="num">Hauptgruppe</th><th class="num">Zusatzgruppe</th><th>Rolle</th><th></th></tr></thead>
                         <tbody>
                             @foreach (var g in _snap?.Groups.Values.OrderBy(x => x.UserGroupId) ?? Enumerable.Empty<UserGroup>())
                             {
                                 <tr>
                                     <td class="muted">@g.UserGroupId</td>
-                                    <td><strong>@g.DisplayTitle</strong>@if (!string.IsNullOrEmpty(g.Description)) { <div class="small muted">@HtmlUtil.CleanTitle(g.Description)</div> }</td>
+                                    <td><a href="/admin/groups/@g.UserGroupId"><strong>@g.DisplayTitle</strong></a>@if (!string.IsNullOrEmpty(g.Description)) { <div class="small muted">@HtmlUtil.CleanTitle(g.Description)</div> }</td>
                                     <td class="small">@HtmlUtil.CleanTitle(g.UserTitle)</td>
-                                    <td class="num"><a href="/admin/users?group=@g.UserGroupId">@ForumTime.Number(_counts.GetValueOrDefault(g.UserGroupId))</a></td>
+                                    <td class="num">@ForumTime.Number(_counts.GetValueOrDefault(g.UserGroupId).Primary)</td>
+                                    <td class="num">@ForumTime.Number(_counts.GetValueOrDefault(g.UserGroupId).Secondary)</td>
                                     <td>@Role(g.UserGroupId)</td>
                                     <td class="nowrap">
+                                        <a class="btn btn-sm" href="/admin/groups/@g.UserGroupId">Mitglieder</a>
                                         <button type="button" class="btn btn-sm" @onclick="() => Edit(g)">Bearbeiten</button>
                                         @if (g.UserGroupId > 8) { <button type="button" class="btn btn-sm btn-ghost btn-danger" @onclick="() => Delete(g)" title="Löschen"><Icon Name="trash" Size="16" /></button> }
                                     </td>
@@ -37,7 +39,7 @@
                     </table>
                 </div>
             </section>
-            <p class="small muted">Welche Gruppen Administratoren, Super-Moderatoren und Gesperrte sind, legst du unter <a href="/admin/settings">Einstellungen</a> fest. Forenbezogene Rechte unter <a href="/admin/forums">Foren &amp; Rechte</a>.</p>
+            <p class="small muted">Mitglieder einer Gruppe verwaltest du über „Mitglieder“ – z. B. für bezahlte Zugänge als Zusatzgruppe, dann bleibt die normale Hauptgruppe erhalten. Welche Gruppen Administratoren, Super-Moderatoren und Gesperrte sind, legst du unter <a href="/admin/settings">Einstellungen</a> fest. Forenbezogene Rechte unter <a href="/admin/forums">Foren &amp; Rechte</a>.</p>
         </ChildContent>
     </AdminShell>
 </main>
@@ -82,7 +84,7 @@
     };
 
     private BoardSnapshot? _snap;
-    private Dictionary<int, long> _counts = new();
+    private Dictionary<int, (long Primary, long Secondary)> _counts = new();
     private UserGroup? _edit;
     private string? _msg, _err;
 

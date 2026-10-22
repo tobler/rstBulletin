@@ -201,11 +201,80 @@ public sealed class ForumAdminService(Db db, BoardCache cache)
         return null;
     }
 
-    public async Task<Dictionary<int, long>> GroupMemberCountsAsync()
+    /// <summary>Mitglieder je Gruppe: als Hauptgruppe (usergroupid) und als Zusatzgruppe (membergroupids).</summary>
+    public async Task<Dictionary<int, (long Primary, long Secondary)>> GroupMemberCountsAsync()
     {
         await using var c = await db.OpenAsync();
-        return (await c.QueryAsync<(long, long)>($"SELECT CAST(usergroupid AS SIGNED), COUNT(*) FROM {T.User} GROUP BY usergroupid")).ToDictionary(x => (int)x.Item1, x => x.Item2);
+        var primary = (await c.QueryAsync<(long, long)>($"SELECT CAST(usergroupid AS SIGNED), COUNT(*) FROM {T.User} GROUP BY usergroupid"))
+            .ToDictionary(x => (int)x.Item1, x => x.Item2);
+        var secondary = new Dictionary<int, long>();
+        foreach (var list in await c.QueryAsync<string>($"SELECT membergroupids FROM {T.User} WHERE membergroupids <> ''"))
+            foreach (var id in ParseIds(list).Distinct())
+                secondary[id] = secondary.GetValueOrDefault(id) + 1;
+        return primary.Keys.Union(secondary.Keys).ToDictionary(k => k, k => (primary.GetValueOrDefault(k), secondary.GetValueOrDefault(k)));
     }
+
+    public sealed record GroupMember(long UserId, string Username, string Email, int UserGroupId, string MemberGroupIds, long JoinDate, long LastActivity, long Posts)
+    {
+        public bool IsPrimary(int groupId) => UserGroupId == groupId;
+    }
+
+    public async Task<PagedResult<GroupMember>> GroupMembersAsync(int groupId, string? search, int page, int pageSize)
+    {
+        await using var c = await db.OpenAsync();
+        var where = "(u.usergroupid = @groupId OR FIND_IN_SET(@groupId, u.membergroupids))";
+        if (!string.IsNullOrWhiteSpace(search)) where += " AND (u.username LIKE @s OR u.email LIKE @s)";
+        var p = new { groupId, s = $"%{search?.Trim()}%", off = (page - 1) * pageSize, size = pageSize };
+        var total = await c.ExecuteScalarAsync<long>($"SELECT COUNT(*) FROM {T.User} u WHERE {where}", p);
+        var rows = (await c.QueryAsync<GroupMember>(
+            $"""
+            SELECT CAST(u.userid AS SIGNED) AS UserId, u.username AS Username, u.email AS Email, CAST(u.usergroupid AS SIGNED) AS UserGroupId,
+                   u.membergroupids AS MemberGroupIds, CAST(u.joindate AS SIGNED) AS JoinDate, CAST(u.lastactivity AS SIGNED) AS LastActivity,
+                   CAST(u.posts AS SIGNED) AS Posts
+            FROM {T.User} u WHERE {where} ORDER BY u.username LIMIT @off, @size
+            """, p)).ToList();
+        return new PagedResult<GroupMember>(rows, total, page, pageSize);
+    }
+
+    /// <summary>Benutzer in eine Gruppe aufnehmen – als Zusatzgruppe (Standard) oder als neue Hauptgruppe.</summary>
+    public async Task<string?> AddGroupMemberAsync(long userId, int groupId, bool asPrimary)
+    {
+        await using var c = await db.OpenAsync();
+        var u = await c.QueryFirstOrDefaultAsync<(long, string)>($"SELECT CAST(usergroupid AS SIGNED), membergroupids FROM {T.User} WHERE userid = @userId", new { userId });
+        if (u == default) return "Benutzer nicht gefunden.";
+        var extra = ParseIds(u.Item2).ToList();
+        if (asPrimary)
+        {
+            // Bisherige Hauptgruppe bleibt als Zusatzgruppe erhalten, damit keine Rechte verloren gehen
+            extra.Remove(groupId);
+            if (u.Item1 != groupId && u.Item1 > 0 && !extra.Contains((int)u.Item1)) extra.Add((int)u.Item1);
+            await c.ExecuteAsync($"UPDATE {T.User} SET usergroupid = @groupId, membergroupids = @m WHERE userid = @userId",
+                new { userId, groupId, m = string.Join(",", extra) });
+            return null;
+        }
+        if (u.Item1 == groupId) return "Das ist bereits die Hauptgruppe dieses Benutzers.";
+        if (extra.Contains(groupId)) return "Der Benutzer ist bereits Mitglied.";
+        extra.Add(groupId);
+        await c.ExecuteAsync($"UPDATE {T.User} SET membergroupids = @m WHERE userid = @userId", new { userId, m = string.Join(",", extra) });
+        return null;
+    }
+
+    /// <summary>Aus der Gruppe entfernen. War es die Hauptgruppe, wird der Benutzer in <paramref name="fallbackGroupId"/> verschoben.</summary>
+    public async Task RemoveGroupMemberAsync(long userId, int groupId, int fallbackGroupId)
+    {
+        await using var c = await db.OpenAsync();
+        var u = await c.QueryFirstOrDefaultAsync<(long, string)>($"SELECT CAST(usergroupid AS SIGNED), membergroupids FROM {T.User} WHERE userid = @userId", new { userId });
+        if (u == default) return;
+        var extra = ParseIds(u.Item2).Where(x => x != groupId).ToList();
+        var primary = u.Item1 == groupId ? fallbackGroupId : (int)u.Item1;
+        extra.Remove(primary);
+        await c.ExecuteAsync($"UPDATE {T.User} SET usergroupid = @primary, membergroupids = @m, displaygroupid = IF(displaygroupid = @groupId, 0, displaygroupid) WHERE userid = @userId",
+            new { userId, primary, groupId, m = string.Join(",", extra) });
+    }
+
+    private static IEnumerable<int> ParseIds(string? list) =>
+        (list ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(x => int.TryParse(x, out var i) ? i : 0).Where(i => i > 0);
 
     // ---------- Moderatoren ----------
 

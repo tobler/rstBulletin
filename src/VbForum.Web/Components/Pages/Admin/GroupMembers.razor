@@ -1,0 +1,182 @@
+@page "/admin/groups/{Id:int}"
+@attribute [Authorize(Policy = "Admin")]
+@rendermode InteractiveServer
+@inject BoardCache Cache
+@inject ForumAdminService Admin
+@inject UserRepository Users
+@inject CurrentUser Current
+@inject TokenRepository Audit
+
+<PageTitle>@(_group?.DisplayTitle ?? "Gruppe") – Administration</PageTitle>
+
+<main class="page container">
+    <AdminShell Active="groups" Title="@(_group?.DisplayTitle ?? "Gruppe")" Subtitle="@(_group == null ? null : $"Benutzergruppe #{_group.UserGroupId}")">
+        <Actions><a class="btn" href="/admin/groups">Alle Gruppen</a></Actions>
+        <ChildContent>
+            @if (_snap != null && _group == null) { <div class="card empty">Gruppe nicht gefunden.</div> }
+            else if (_group != null)
+            {
+                @if (_msg != null) { <div class="alert alert-ok" role="status" style="white-space:pre-line">@_msg</div> }
+                @if (_err != null) { <div class="alert alert-err" role="alert" style="white-space:pre-line">@_err</div> }
+
+                <section class="card card-pad stack">
+                    <h2 class="card-title">Mitglieder hinzufügen</h2>
+                    <div class="field">
+                        <label for="gm-names">Benutzernamen (einer pro Zeile oder durch Komma getrennt)</label>
+                        <textarea id="gm-names" rows="3" @bind="_names" placeholder="MaxM&#10;Kathi_R"></textarea>
+                    </div>
+                    <label class="check"><input type="checkbox" @bind="_asPrimary" />Als Hauptgruppe setzen (sonst als Zusatzgruppe – die bisherige Gruppe bleibt erhalten)</label>
+                    <div class="form-actions"><button type="button" class="btn btn-primary" @onclick="AddAsync" disabled="@_busy">Hinzufügen</button></div>
+                </section>
+
+                <section class="card">
+                    <div class="card-head">
+                        <h2>Mitglieder</h2>
+                        <span class="small muted">@ForumTime.Number(_members?.Total ?? 0)</span>
+                    </div>
+                    <div class="toolbar">
+                        <input class="input" style="flex:1 1 220px" placeholder="Name oder E-Mail suchen" @bind="_search" @bind:event="oninput" @onkeyup="SearchKey" aria-label="Mitglieder durchsuchen" />
+                        <button type="button" class="btn" @onclick="() => LoadAsync(1)">Suchen</button>
+                    </div>
+                    <div class="table-wrap">
+                        <table class="table">
+                            <thead><tr><th>Benutzer</th><th>Mitgliedschaft</th><th class="num">Beiträge</th><th>Registriert</th><th>Zuletzt aktiv</th><th></th></tr></thead>
+                            <tbody>
+                                @foreach (var m in _members?.Items ?? Array.Empty<ForumAdminService.GroupMember>())
+                                {
+                                    <tr>
+                                        <td><a href="/admin/users/@m.UserId"><strong>@HtmlUtil.CleanTitle(m.Username)</strong></a><div class="small muted">@m.Email</div></td>
+                                        <td>@if (m.IsPrimary(Id)) { <span class="pill pill-accent">Hauptgruppe</span> } else { <span class="pill">Zusatzgruppe</span> }</td>
+                                        <td class="num">@ForumTime.Number(m.Posts)</td>
+                                        <td class="small">@ForumTime.Date(m.JoinDate)</td>
+                                        <td class="small">@ForumTime.Relative(m.LastActivity)</td>
+                                        <td class="nowrap">
+                                            @if (_confirm == m.UserId)
+                                            {
+                                                <button type="button" class="btn btn-sm btn-danger" @onclick="() => RemoveAsync(m)">Wirklich entfernen</button>
+                                                <button type="button" class="btn btn-sm" @onclick="() => _confirm = 0">Abbrechen</button>
+                                            }
+                                            else
+                                            {
+                                                <button type="button" class="btn btn-sm btn-ghost btn-danger" @onclick="() => _confirm = m.UserId">Entfernen</button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                                @if (_members?.Items.Count == 0) { <tr><td colspan="6" class="empty">Keine Mitglieder@(string.IsNullOrWhiteSpace(_search) ? "" : " gefunden").</td></tr> }
+                            </tbody>
+                        </table>
+                    </div>
+                    @if (_members != null && _members.PageCount > 1)
+                    {
+                        <div class="list-foot">
+                            <button type="button" class="btn btn-sm" disabled="@(_page <= 1)" @onclick="() => LoadAsync(_page - 1)">‹ Zurück</button>
+                            <span>Seite @_page von @_members.PageCount</span>
+                            <button type="button" class="btn btn-sm" disabled="@(_page >= _members.PageCount)" @onclick="() => LoadAsync(_page + 1)">Weiter ›</button>
+                        </div>
+                    }
+                    <div class="list-foot"><span>Wird die Hauptgruppe entfernt, kommt der Benutzer in die Gruppe „@(_snap!.Groups.GetValueOrDefault(_snap.Settings.RegisteredGroupId)?.DisplayTitle)“.</span></div>
+                </section>
+
+                <section class="card">
+                    <div class="card-head"><h2>Foren mit eigenen Rechten für diese Gruppe</h2></div>
+                    @{ var custom = _snap!.Flatten().Where(f => _snap.ForumPermissions.ContainsKey((f.ForumId, Id))).ToList(); }
+                    @if (custom.Count == 0)
+                    {
+                        <div class="empty">Keine – in allen Foren gelten die Standardrechte der Gruppe bzw. die geerbten Rechte.</div>
+                    }
+                    else
+                    {
+                        <div class="table-wrap">
+                            <table class="table">
+                                <thead><tr><th>Forum</th><th>Sehen</th><th>Lesen</th><th>Antworten</th><th>Neue Themen</th><th></th></tr></thead>
+                                <tbody>
+                                    @foreach (var f in custom)
+                                    {
+                                        var v = _snap.ForumPermissions[(f.ForumId, Id)];
+                                        <tr>
+                                            <td><strong>@f.DisplayTitle</strong> <span class="small muted">#@f.ForumId · auch für Unterforen</span></td>
+                                            <td>@Yn(v, ForumPerm.CanView)</td>
+                                            <td>@Yn(v, ForumPerm.CanViewThreads)</td>
+                                            <td>@Yn(v, ForumPerm.CanReplyOthers)</td>
+                                            <td>@Yn(v, ForumPerm.CanPostNew)</td>
+                                            <td><a class="btn btn-sm" href="/admin/forums/@f.ForumId/permissions">Rechte</a></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </section>
+            }
+        </ChildContent>
+    </AdminShell>
+</main>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private BoardSnapshot? _snap;
+    private UserGroup? _group;
+    private PagedResult<ForumAdminService.GroupMember>? _members;
+    private int _page = 1;
+    private long _confirm;
+    private string? _search, _names, _msg, _err;
+    private bool _asPrimary, _busy;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _snap = await Cache.GetAsync();
+        _group = _snap.Groups.GetValueOrDefault(Id);
+        if (_group != null) await LoadAsync(1);
+    }
+
+    private async Task LoadAsync(int page)
+    {
+        _page = Math.Max(1, page);
+        _members = await Admin.GroupMembersAsync(Id, _search, _page, 50);
+    }
+
+    private async Task SearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await LoadAsync(1);
+    }
+
+    private MarkupString Yn(long v, ForumPerm p) =>
+        new((v & _snap!.Bits.Perm(p)) != 0 ? "<span class=\"perm-cell yes\">✓</span>" : "<span class=\"perm-cell no\">–</span>");
+
+    private async Task AddAsync()
+    {
+        _msg = _err = null;
+        var names = (_names ?? "").Split(new[] { '\n', '\r', ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToList();
+        if (names.Count == 0) { _err = "Bitte mindestens einen Benutzernamen eingeben."; return; }
+        _busy = true;
+        var ok = new List<string>();
+        var errors = new List<string>();
+        var me = await Current.GetAsync();
+        foreach (var n in names)
+        {
+            var u = await Users.GetByNameAsync(n);
+            if (u == null) { errors.Add($"{n}: nicht gefunden"); continue; }
+            var err = await Admin.AddGroupMemberAsync(u.UserId, Id, _asPrimary);
+            if (err != null) { errors.Add($"{u.DisplayName}: {err}"); continue; }
+            ok.Add(u.DisplayName);
+            await Audit.LogAsync(me, "group.member.add", $"{u.DisplayName} → {_group!.DisplayTitle}{(_asPrimary ? " (Hauptgruppe)" : "")}", "");
+        }
+        if (ok.Count > 0) _msg = $"Hinzugefügt: {string.Join(", ", ok)}";
+        if (errors.Count > 0) _err = string.Join("\n", errors);
+        if (errors.Count == 0) _names = "";
+        _busy = false;
+        await LoadAsync(_page);
+    }
+
+    private async Task RemoveAsync(ForumAdminService.GroupMember m)
+    {
+        _msg = _err = null;
+        _confirm = 0;
+        await Admin.RemoveGroupMemberAsync(m.UserId, Id, _snap!.Settings.RegisteredGroupId);
+        await Audit.LogAsync(await Current.GetAsync(), "group.member.remove", $"{HtmlUtil.CleanTitle(m.Username)} ← {_group!.DisplayTitle}", "");
+        _msg = $"{HtmlUtil.CleanTitle(m.Username)} wurde aus der Gruppe entfernt.";
+        await LoadAsync(_page);
+    }
+}
