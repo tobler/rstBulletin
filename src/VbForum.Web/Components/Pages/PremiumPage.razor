@@ -9,6 +9,7 @@
 <main class="page container">
     <div class="page-head"><div><h1>Premium-Mitgliedschaft</h1><p>Voller Zugang zu allen Premium-Bereichen des Forums.</p></div></div>
 
+    @if (!string.IsNullOrEmpty(Error)) { <div class="alert alert-err" role="alert">@Error</div> }
     @if (Done == "1")
     {
         <div class="alert alert-ok" role="status">Danke für deine Buchung! Sobald rstpay die Zahlung bestätigt, wird dein Zugang freigeschaltet – meist innerhalb weniger Sekunden. Lade die Seite bei Bedarf neu.</div>
@@ -32,6 +33,7 @@
 @code {
     [SupplyParameterFromQuery(Name = "forum")] public int? ForumId { get; set; }
     [SupplyParameterFromQuery(Name = "done")] public string? Done { get; set; }
+    [SupplyParameterFromQuery(Name = "error")] public string? Error { get; set; }
 
     private bool _loaded;
     private BoardSnapshot? _snap;

@@ -123,6 +123,7 @@ public sealed class Tables(string p)
     public const string OwnUserPref = "`vbf_userpref`";
     public const string OwnPlan = "`vbf_plan`";
     public const string OwnSubscription = "`vbf_subscription`";
+    public const string OwnPayment = "`vbf_payment`";
 }
 
 public sealed class Db(DbSettingsStore store)

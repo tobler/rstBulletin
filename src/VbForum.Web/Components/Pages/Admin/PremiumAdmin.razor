@@ -7,6 +7,7 @@
 @inject CurrentUser Current
 @inject TokenRepository Audit
 @inject NavigationManager Nav
+@inject RstPayService RstPay
 
 <PageTitle>Premium – Administration</PageTitle>
 
@@ -18,6 +19,7 @@
         <div class="seg" role="tablist" style="align-self:flex-start">
             <button type="button" role="tab" class="@(_tab == "plans" ? "on" : "")" @onclick='() => _tab = "plans"'>Abo-Modelle</button>
             <button type="button" role="tab" class="@(_tab == "subs" ? "on" : "")" @onclick="ShowSubs">Abonnenten (@ForumTime.Number(_counts?.Active ?? 0))</button>
+            <button type="button" role="tab" class="@(_tab == "payments" ? "on" : "")" @onclick="ShowPayments">Zahlungen</button>
             <button type="button" role="tab" class="@(_tab == "settings" ? "on" : "")" @onclick='() => _tab = "settings"'>Foren &amp; Schnittstelle</button>
         </div>
 
@@ -37,7 +39,7 @@
                                     <td>@p.DurationText</td>
                                     <td class="num nowrap">@p.PriceText</td>
                                     <td class="small">@_snap.Groups.GetValueOrDefault(p.GroupId)?.DisplayTitle @(p.PrimaryGroup ? "(Hauptgruppe)" : "")</td>
-                                    <td>@if (p.Active) { <span class="pill pill-accent">Aktiv</span> } else { <span class="pill">Aus</span> }@if (string.IsNullOrWhiteSpace(p.PayUrl)) { <span class="pill pill-danger" style="margin-left:4px">kein Bezahl-Link</span> }</td>
+                                    <td>@if (p.Active) { <span class="pill pill-accent">Aktiv</span> } else { <span class="pill">Aus</span> }@if (p.PayMode == "rstpay") { <span class="pill" style="margin-left:4px">rstpay · @p.RstDays Tage</span> } else if (string.IsNullOrWhiteSpace(p.PayUrl)) { <span class="pill pill-danger" style="margin-left:4px">kein Bezahl-Link</span> }</td>
                                     <td class="nowrap">
                                         <button type="button" class="btn btn-sm" @onclick="() => EditPlan(p)">Bearbeiten</button>
                                         <button type="button" class="btn btn-sm btn-ghost btn-danger" title="Löschen" @onclick="() => DeletePlan(p)"><Icon Name="trash" Size="16" /></button>
@@ -114,8 +116,69 @@
                 </div>
             </section>
         }
+        else if (_tab == "payments")
+        {
+            <section class="card">
+                <div class="card-head"><h2>Rückmeldungen von rstpay</h2><span class="small muted">die letzten 200</span></div>
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead><tr><th>Zeit</th><th>Aktion</th><th>Benutzer</th><th class="num">Betrag</th><th>Zahler</th><th>Transaktion</th><th>Ergebnis</th><th class="hide-mobile">IP</th></tr></thead>
+                        <tbody>
+                            @foreach (var r in _payments)
+                            {
+                                <tr>
+                                    <td class="small nowrap">@ForumTime.Full(r.Dateline)</td>
+                                    <td><code>@r.Action</code></td>
+                                    <td class="small">@if (r.UserId > 0) { <a href="/admin/users/@r.UserId">@HtmlUtil.CleanTitle(r.Username)</a> } else { <span class="muted">@r.Param1</span> }</td>
+                                    <td class="num small">@r.Amount</td>
+                                    <td class="small">@r.Payer @r.Country</td>
+                                    <td class="small"><code>@r.TransactionId</code></td>
+                                    <td class="small">@r.Result</td>
+                                    <td class="small hide-mobile">@r.Ip</td>
+                                </tr>
+                            }
+                            @if (_payments.Count == 0) { <tr><td colspan="8" class="empty">Noch keine Rückmeldungen.</td></tr> }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
         else
         {
+            <section class="card card-pad stack">
+                <h2 class="card-title">rstpay</h2>
+                <div class="form-grid">
+                    <div class="field"><label for="r-base">rstpay-Adresse</label><input id="r-base" @bind="_rs.RstPayBaseUrl" /></div>
+                    <div class="field"><label for="r-proj">Projekt-ID</label><input id="r-proj" @bind="_rs.RstPayProjectId" /></div>
+                    <div class="field"><label for="r-mid">Händler-ID</label><input id="r-mid" @bind="_rs.RstPayMerchantId" /></div>
+                    <div class="field"><label for="r-key">Händler-Schlüssel</label><input id="r-key" type="password" @bind="_rs.RstPayMerchantKey" autocomplete="new-password" placeholder="@(string.IsNullOrEmpty(_snap.Settings.RstPayMerchantKey) ? "" : "(gespeichert)")" /></div>
+                </div>
+                <div class="form-grid">
+                    <GroupSelect Label="Premium-Gruppe (Buchung)" @bind-Value="_rs.RstPayPremiumGroupId" Groups="_groups" />
+                    <GroupSelect Label="Gruppe nach Kündigung" @bind-Value="_rs.RstPayCancelGroupId" Groups="_groups" />
+                    <GroupSelect Label="Gruppe bei Rückbuchung" @bind-Value="_rs.RstPayChargebackGroupId" Groups="_groups" />
+                    <GroupSelect Label="Gratis-Buchung: aus Gruppe" @bind-Value="_rs.RstPayFreeFromGroupId" Groups="_groups" />
+                    <GroupSelect Label="… in Gruppe" @bind-Value="_rs.RstPayFreeGroupId" Groups="_groups" />
+                </div>
+                <div class="field">
+                    <label>Rückruf-Adresse (bei rstpay eintragen)</label>
+                    @if (string.IsNullOrEmpty(_snap.Settings.RstPayCallbackToken))
+                    {
+                        <span class="muted small">Noch keine – „Rückruf-Adresse erzeugen“ klicken.</span>
+                    }
+                    else
+                    {
+                        <input class="input" readonly style="font-family:var(--mono)" value="@($"{Base}/rstpay/callback/{_snap.Settings.RstPayCallbackToken}")" />
+                    }
+                    <span class="hint">Die Adresse enthält einen geheimen Schlüssel – nur wer sie kennt, kann Buchungen melden. Parameter wie bisher: action, transaction_id, amount, firstname, lastname, country, param1.</span>
+                </div>
+                <div class="field"><label for="r-ips">Nur diese IP-Adressen zulassen (optional)</label><input id="r-ips" @bind="_rs.RstPayAllowedIps" placeholder="z. B. 203.0.113.10, 203.0.113.11" /></div>
+                <div class="form-actions">
+                    <button type="button" class="btn" @onclick="NewCallbackToken">@(string.IsNullOrEmpty(_snap.Settings.RstPayCallbackToken) ? "Rückruf-Adresse erzeugen" : "Neue Rückruf-Adresse erzeugen")</button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveRstPay">rstpay-Einstellungen speichern</button>
+                </div>
+            </section>
+
             <section class="card card-pad stack">
                 <h2 class="card-title">Kostenpflichtige Foren</h2>
                 <p class="small muted" style="margin:0">
@@ -139,7 +202,8 @@
             </section>
 
             <section class="card card-pad stack">
-                <h2 class="card-title">Schnittstelle für rstpay</h2>
+                <h2 class="card-title">Zusätzliche JSON-API (optional)</h2>
+                <p class="small muted" style="margin:0">Für andere Systeme oder eigene Skripte. rstpay selbst nutzt die Rückruf-Adresse oben.</p>
                 @if (string.IsNullOrEmpty(_snap.Settings.PremiumApiKey))
                 {
                     <p style="margin:0">Die API ist abgeschaltet. Erzeuge einen Schlüssel, um sie zu aktivieren.</p>
@@ -204,18 +268,39 @@
                 </div>
             </div>
             <div class="field"><label for="m-d">Beschreibung (optional)</label><input id="m-d" @bind="_edit.Description" maxlength="500" placeholder="z. B. Spare 33 % gegenüber dem Monatsabo" /></div>
+            <div class="form-grid">
+                <div class="field">
+                    <label for="m-mode">Bezahlart</label>
+                    <select id="m-mode" @bind="_edit.PayMode">
+                        <option value="rstpay">rstpay (Session über die rstpay-API)</option>
+                        <option value="link">Fester Bezahl-Link</option>
+                    </select>
+                </div>
+                @if (_edit.PayMode == "rstpay")
+                {
+                    <div class="field"><label for="m-days">rstpay-Laufzeit (Tage)</label><input id="m-days" type="number" @bind="_edit.RstDays" /><span class="hint">Parameter duration, z. B. 30 / 90 / 180.</span></div>
+                    <div class="field"><label for="m-pt">Zahlart (paymenttype)</label><input id="m-pt" type="number" @bind="_edit.RstPaymentType" /><span class="hint">1 = Lastschrift</span></div>
+                }
+            </div>
+            @if (_edit.PayMode == "rstpay")
+            {
+                <label class="toggle-row">Wiederkehrende Abbuchung (rebilling)<input type="checkbox" @bind="_edit.RstRebilling" /></label>
+            }
+            else
+            {
             <div class="field">
-                <label for="m-u">Bezahl-Link bei rstpay</label>
+                <label for="m-u">Bezahl-Link</label>
                 <input id="m-u" @bind="_edit.PayUrl" placeholder="https://pay.rst.de/checkout/premium-3m?user={userid}&amp;email={email}" />
                 <span class="hint">Platzhalter: <code>{userid}</code> <code>{username}</code> <code>{email}</code> <code>{planid}</code> <code>{price}</code> <code>{returnurl}</code> – werden beim Klick mit den Daten des Benutzers gefüllt.</span>
             </div>
+            }
             <div class="form-grid">
                 <div class="field"><label for="m-o">Reihenfolge</label><input id="m-o" type="number" @bind="_edit.DisplayOrder" /></div>
             </div>
             <div class="stack" style="gap:0">
                 <label class="toggle-row">Aktiv (wird angeboten)<input type="checkbox" @bind="_edit.Active" /></label>
                 <label class="toggle-row">Als „Empfohlen“ hervorheben<input type="checkbox" @bind="_edit.Highlight" /></label>
-                <label class="toggle-row">Als Hauptgruppe setzen (sonst Zusatzgruppe – empfohlen)<input type="checkbox" @bind="_edit.PrimaryGroup" /></label>
+                @if (_edit.PayMode != "rstpay") { <label class="toggle-row">Als Hauptgruppe setzen (sonst Zusatzgruppe – empfohlen)<input type="checkbox" @bind="_edit.PrimaryGroup" /></label> }
             </div>
             <div class="form-actions">
                 <button type="button" class="btn" @onclick="() => _edit = null">Abbrechen</button>
@@ -237,6 +322,9 @@
     private int _grantPlan;
     private DateTime? _grantUntil;
     private bool _showKey;
+    private List<RstPayService.PaymentRow> _payments = new();
+    private List<UserGroup> _groups = new();
+    private VbForum.Core.Settings.BoardSettings _rs = new();
 
     private string Base => Nav.BaseUri.TrimEnd('/');
 
@@ -250,6 +338,9 @@
         _premiumForums = _snap.Settings.PremiumForums.ToHashSet();
         _text = _snap.Settings.PremiumText;
         if (_grantPlan == 0 && _plans.Count > 0) _grantPlan = _plans[0].PlanId;
+        _groups = _snap.Groups.Values.OrderBy(g => g.UserGroupId).ToList();
+        _rs = _snap.Settings.Clone();
+        _rs.RstPayMerchantKey = "";
     }
 
     private static string StatusText(PremiumService.Subscription s) => s.Status switch { "revoked" => "Beendet", "expired" => "Abgelaufen", _ => "Abgelaufen" };
@@ -258,7 +349,7 @@
     {
         _modalErr = null;
         var premiumGroup = _snap!.Groups.Values.FirstOrDefault(g => g.DisplayTitle.Contains("Premium", StringComparison.OrdinalIgnoreCase))?.UserGroupId ?? 0;
-        _edit = new PremiumService.Plan { Months = 1, GroupId = premiumGroup, DisplayOrder = (_plans.Count + 1) * 10 };
+        _edit = new PremiumService.Plan { Months = 1, GroupId = _snap.Settings.RstPayPremiumGroupId > 0 ? _snap.Settings.RstPayPremiumGroupId : premiumGroup, DisplayOrder = (_plans.Count + 1) * 10, PayMode = "rstpay", RstDays = 30 };
         _price = "";
     }
 
@@ -269,6 +360,7 @@
         {
             PlanId = p.PlanId, Title = p.Title, Description = p.Description, PriceCents = p.PriceCents, Currency = p.Currency, Months = p.Months, GroupId = p.GroupId,
             PrimaryGroup = p.PrimaryGroup, PayUrl = p.PayUrl, Active = p.Active, DisplayOrder = p.DisplayOrder, Highlight = p.Highlight,
+            PayMode = p.PayMode, RstDays = p.RstDays, RstPaymentType = p.RstPaymentType, RstRebilling = p.RstRebilling,
         };
         _price = (p.PriceCents / 100m).ToString("0.00", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
     }
@@ -296,6 +388,37 @@
         await Premium.DeletePlanAsync(p.PlanId);
         await Audit.LogAsync(await Current.GetAsync(), "premium.plan.delete", $"{p.PlanId} {p.Title}", "");
         _msg = $"„{p.Title}“ gelöscht. Bestehende Abos laufen unverändert weiter.";
+        await LoadAsync();
+    }
+
+    private async Task ShowPayments() { _tab = "payments"; _payments = await RstPay.RecentAsync(); }
+
+    private async Task SaveRstPay()
+    {
+        _msg = _err = null;
+        var s = (await Cache.GetAsync()).Settings.Clone();
+        s.RstPayBaseUrl = string.IsNullOrWhiteSpace(_rs.RstPayBaseUrl) ? "https://rstpay.de" : _rs.RstPayBaseUrl.Trim();
+        s.RstPayProjectId = _rs.RstPayProjectId.Trim();
+        s.RstPayMerchantId = _rs.RstPayMerchantId.Trim();
+        if (!string.IsNullOrWhiteSpace(_rs.RstPayMerchantKey)) s.RstPayMerchantKey = _rs.RstPayMerchantKey.Trim();
+        s.RstPayAllowedIps = _rs.RstPayAllowedIps.Trim();
+        s.RstPayPremiumGroupId = _rs.RstPayPremiumGroupId; s.RstPayCancelGroupId = _rs.RstPayCancelGroupId; s.RstPayChargebackGroupId = _rs.RstPayChargebackGroupId;
+        s.RstPayFreeFromGroupId = _rs.RstPayFreeFromGroupId; s.RstPayFreeGroupId = _rs.RstPayFreeGroupId;
+        var groups = new[] { s.RstPayPremiumGroupId, s.RstPayCancelGroupId, s.RstPayChargebackGroupId, s.RstPayFreeGroupId };
+        if (groups.Any(g => s.AdminGroups.Contains(g) || s.SuperModGroups.Contains(g))) { _err = "Administrator- oder Moderatorgruppen dürfen hier nicht gewählt werden."; return; }
+        await Cache.SaveSettingsAsync(s);
+        await Audit.LogAsync(await Current.GetAsync(), "premium.rstpay", $"Projekt {s.RstPayProjectId} Händler {s.RstPayMerchantId}", "");
+        _msg = "rstpay-Einstellungen gespeichert.";
+        await LoadAsync();
+    }
+
+    private async Task NewCallbackToken()
+    {
+        var s = (await Cache.GetAsync()).Settings.Clone();
+        s.RstPayCallbackToken = VbForum.Core.Security.VbPassword.RandomToken(24);
+        await Cache.SaveSettingsAsync(s);
+        await Audit.LogAsync(await Current.GetAsync(), "premium.rstpay.callback", "neue Rückruf-Adresse", "");
+        _msg = "Neue Rückruf-Adresse erzeugt. Bitte bei rstpay eintragen – die alte gilt ab sofort nicht mehr.";
         await LoadAsync();
     }
 

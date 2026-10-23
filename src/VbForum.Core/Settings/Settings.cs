@@ -73,6 +73,26 @@ public sealed class BoardSettings
     public string PremiumText { get; set; } = "Dieser Bereich ist Premium-Mitgliedern vorbehalten. Mit einem Premium-Zugang kannst du alle Beiträge lesen und mitschreiben.";
     /// <summary>Schlüssel für die Zahlungs-API (rstpay). Leer = API abgeschaltet.</summary>
     public string PremiumApiKey { get; set; } = "";
+
+    // rstpay (Zahlungsdienst): Session anfordern + Rückmeldung (Callback)
+    public string RstPayBaseUrl { get; set; } = "https://rstpay.de";
+    public string RstPayProjectId { get; set; } = "";
+    public string RstPayMerchantId { get; set; } = "";
+    public string RstPayMerchantKey { get; set; } = "";
+    /// <summary>Geheimer Teil der Rückruf-Adresse /rstpay/callback/{token}.</summary>
+    public string RstPayCallbackToken { get; set; } = "";
+    /// <summary>Optional: nur diese IP-Adressen dürfen die Rückruf-Adresse aufrufen (Komma-getrennt).</summary>
+    public string RstPayAllowedIps { get; set; } = "";
+    public int RstPayPremiumGroupId { get; set; } = 10;
+    /// <summary>Gruppe nach Kündigung/Ablauf (bisher 11 = Free-User).</summary>
+    public int RstPayCancelGroupId { get; set; } = 11;
+    /// <summary>Gruppe bei Rückbuchung (bisher 8 = gesperrt).</summary>
+    public int RstPayChargebackGroupId { get; set; } = 8;
+    /// <summary>free_booking: Benutzer aus dieser Gruppe (3 = E-Mail unbestätigt) …</summary>
+    public int RstPayFreeFromGroupId { get; set; } = 3;
+    /// <summary>… kommen in diese Gruppe (11 = Free-User).</summary>
+    public int RstPayFreeGroupId { get; set; } = 11;
+    public bool RstPayConfigured => !string.IsNullOrWhiteSpace(RstPayProjectId) && !string.IsNullOrWhiteSpace(RstPayMerchantId) && !string.IsNullOrWhiteSpace(RstPayMerchantKey);
     public IReadOnlySet<int> PremiumForums => ParseIds(PremiumForumIds);
     public int MinSecondsBetweenPosts { get; set; } = 15;
 

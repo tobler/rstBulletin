@@ -259,6 +259,17 @@ public sealed class ForumAdminService(Db db, BoardCache cache)
         return null;
     }
 
+    /// <summary>Hauptgruppe hart setzen (wie das alte rstpay-Skript: usergroupid = X); die Gruppe verschwindet dabei aus den Zusatzgruppen.</summary>
+    public async Task SetPrimaryGroupAsync(long userId, int groupId)
+    {
+        await using var c = await db.OpenAsync();
+        var list = await c.ExecuteScalarAsync<string?>($"SELECT membergroupids FROM {T.User} WHERE userid = @userId", new { userId });
+        if (list == null) return;
+        var extra = ParseIds(list).Where(x => x != groupId).ToList();
+        await c.ExecuteAsync($"UPDATE {T.User} SET usergroupid = @groupId, membergroupids = @m, displaygroupid = 0 WHERE userid = @userId",
+            new { userId, groupId, m = string.Join(",", extra) });
+    }
+
     /// <summary>Aus der Gruppe entfernen. War es die Hauptgruppe, wird der Benutzer in <paramref name="fallbackGroupId"/> verschoben.</summary>
     public async Task RemoveGroupMemberAsync(long userId, int groupId, int fallbackGroupId)
     {

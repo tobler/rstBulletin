@@ -318,18 +318,58 @@ public static class Endpoints
         }).RequireAuthorization("Admin");
 
         // Premium buchen: Bezahl-Link mit Benutzerdaten füllen und zu rstpay weiterleiten
-        app.MapGet("/premium/buy/{planId:int}", async (int planId, string? returnUrl, HttpContext http, PremiumService premium, MailService mail, TokenRepository audit) =>
+        app.MapGet("/premium/buy/{planId:int}", async (int planId, string? returnUrl, HttpContext http, PremiumService premium, RstPayService rstpay,
+            MailService mail, TokenRepository audit) =>
         {
             var u = await http.ForumUserAsync();
             if (u.IsGuest) return Results.LocalRedirect($"/login?returnUrl={Uri.EscapeDataString("/premium")}");
             var plan = await premium.PlanAsync(planId);
-            if (plan == null || !plan.Active || string.IsNullOrWhiteSpace(plan.PayUrl)) return Results.LocalRedirect("/premium");
+            if (plan == null || !plan.Active) return Results.LocalRedirect("/premium");
             var back = !string.IsNullOrEmpty(returnUrl) && returnUrl.StartsWith('/') && !returnUrl.StartsWith("//") ? returnUrl : "/premium";
-            back += (back.Contains('?') ? "&" : "?") + "done=1";
-            var url = PremiumService.BuildPayUrl(plan, u, u.Email, await mail.AbsoluteUrlAsync(back));
             await audit.LogAsync(u, "premium.checkout", $"Plan {plan.PlanId} {plan.Title}", http.ClientIp());
-            return Results.Redirect(url);
+            if (plan.PayMode == "rstpay")
+            {
+                // Session bei rstpay anfordern (Händlerdaten bleiben auf dem Server) und weiterleiten
+                var r = await rstpay.CreatePaymentUrlAsync(plan, u);
+                return r.Url != null ? Results.Redirect(r.Url) : Results.LocalRedirect($"/premium?error={Uri.EscapeDataString(r.Error!)}");
+            }
+            if (string.IsNullOrWhiteSpace(plan.PayUrl)) return Results.LocalRedirect("/premium");
+            back += (back.Contains('?') ? "&" : "?") + "done=1";
+            return Results.Redirect(PremiumService.BuildPayUrl(plan, u, u.Email, await mail.AbsoluteUrlAsync(back)));
         });
+
+        // Rückmeldung von rstpay – Adresse mit geheimem Token, kompatibel zum alten PHP-Skript (action, transaction_id, param1 …)
+        app.MapMethods("/rstpay/callback/{token}", new[] { "GET", "POST" }, async (string token, HttpContext http, RstPayService rstpay, BoardCache cache) =>
+        {
+            var s = (await cache.GetAsync()).Settings;
+            if (string.IsNullOrEmpty(s.RstPayCallbackToken) ||
+                !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(System.Text.Encoding.UTF8.GetBytes(token), System.Text.Encoding.UTF8.GetBytes(s.RstPayCallbackToken)))
+                return Results.Text("NOK", statusCode: 403);
+            var ip = http.ClientIp();
+            var allowed = s.RstPayAllowedIps.Split(',', ' ', ';').Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
+            if (allowed.Count > 0 && !allowed.Contains(ip)) return Results.Text("NOK", statusCode: 403);
+            // Selbst dekodieren: rstpay/alte Systeme kodieren Umlaute teils als ISO-8859-1 (%FC) statt UTF-8
+            var p = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            void Parse(string raw)
+            {
+                foreach (var pair in raw.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var i = pair.IndexOf('=');
+                    var k = DecodeLegacy(i < 0 ? pair : pair[..i]);
+                    p[k] = i < 0 ? "" : DecodeLegacy(pair[(i + 1)..]);
+                }
+            }
+            Parse(http.Request.QueryString.Value ?? "");
+            if (http.Request.ContentType?.StartsWith("application/x-www-form-urlencoded", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                using var ms = new MemoryStream();
+                await http.Request.Body.CopyToAsync(ms);
+                Parse(System.Text.Encoding.Latin1.GetString(ms.ToArray()));
+            }
+            else if (http.Request.HasFormContentType)
+                foreach (var (k, v) in await http.Request.ReadFormAsync()) p[k] = v.ToString();
+            return Results.Text(await rstpay.HandleCallbackAsync(p, ip), "text/plain; charset=utf-8");
+        }).DisableAntiforgery();
 
         // Darstellung: hell / dunkel / automatisch – Cookie + beim Benutzer speichern
         app.MapPost("/theme", async (HttpContext http, [FromForm] string? theme, UserRepository users) =>

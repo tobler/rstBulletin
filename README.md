@@ -158,6 +158,27 @@ Paid access works through a normal user group such as "Premium":
    example guests and registered users get "view forum + titles" and the premium group also gets "read posts".
 3. Generate an API key and enter it, together with the API URL, at the payment provider.
 
+**rstpay.** Under *Foren & Schnittstelle* you enter the rstpay project ID, merchant ID and merchant key. These are
+stored in the database, never in the code. For plans with the payment mode "rstpay", "Buy now" works like this:
+
+1. The forum requests a session server-side (`/api/requestsession` with `amount`, `duration`, `paymenttype`,
+   `rebilling`, `param1` = user ID, `param2` = user name).
+2. It redirects the user to `/payment/{session}`.
+
+The callback URL shown there (`/rstpay/callback/<secret token>`) goes into rstpay. It accepts the same parameters and
+actions as the former PHP script and answers `OK <transaction_id>` or `NOK`. Group numbers are configurable.
+
+| action | effect |
+|---|---|
+| `booking`, `transaction`, `rebilling`, `rebooking` (param1 = user ID), `foreign_booking` (param1 = user name) | primary group → premium group (default 10), subscription recorded |
+| `cancel` / `foreign_cancel` | subscriptions ended, primary group → 11 |
+| `chargeback` / `foreign_chargeback` | subscriptions ended, primary group → 8 (banned) |
+| `free_booking` (param1 = user name) | group 3 → 11 |
+
+- Admin and moderator accounts are never changed.
+- Every callback is logged under *Zahlungen*.
+- An optional IP allow-list can restrict who may call the URL.
+
 **API.** All endpoints expect `Authorization: Bearer <key>` (or `X-Api-Key: <key>`) and JSON.
 
 ```bash

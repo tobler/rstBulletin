@@ -55,7 +55,28 @@ public sealed class Schema(Db db)
               `payurl` VARCHAR(1000) NOT NULL DEFAULT '',
               `active` TINYINT NOT NULL DEFAULT 1,
               `displayorder` SMALLINT NOT NULL DEFAULT 0,
-              `highlight` TINYINT NOT NULL DEFAULT 0
+              `highlight` TINYINT NOT NULL DEFAULT 0,
+              `paymode` VARCHAR(10) NOT NULL DEFAULT 'rstpay',
+              `rst_days` INT NOT NULL DEFAULT 30,
+              `rst_paymenttype` INT NOT NULL DEFAULT 1,
+              `rst_rebilling` TINYINT NOT NULL DEFAULT 0
+            ) DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS {Tables.OwnPayment} (
+              `paymentid` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              `dateline` INT UNSIGNED NOT NULL,
+              `action` VARCHAR(30) NOT NULL,
+              `transaction_id` VARCHAR(100) NOT NULL DEFAULT '',
+              `userid` INT UNSIGNED NOT NULL DEFAULT 0,
+              `param1` VARCHAR(255) NOT NULL DEFAULT '',
+              `amount` VARCHAR(20) NOT NULL DEFAULT '',
+              `payer` VARCHAR(200) NOT NULL DEFAULT '',
+              `country` VARCHAR(10) NOT NULL DEFAULT '',
+              `ip` VARCHAR(45) NOT NULL DEFAULT '',
+              `result` VARCHAR(255) NOT NULL DEFAULT '',
+              KEY `dateline` (`dateline`),
+              KEY `userid` (`userid`),
+              KEY `transaction_id` (`transaction_id`)
             ) DEFAULT CHARSET=utf8mb4;
 
             CREATE TABLE IF NOT EXISTS {Tables.OwnSubscription} (
@@ -86,6 +107,24 @@ public sealed class Schema(Db db)
               KEY `dateline` (`dateline`)
             ) DEFAULT CHARSET=utf8mb4;
             """);
+        await MigrateAsync();
+    }
+
+    /// <summary>Spalten nachziehen, die erst in späteren Versionen dazukamen.</summary>
+    public async Task MigrateAsync()
+    {
+        await using var c = await db.OpenAsync();
+        async Task Col(string table, string column, string ddl)
+        {
+            var exists = await c.ExecuteScalarAsync<long>(
+                "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = @t AND COLUMN_NAME = @column",
+                new { t = table.Trim('`'), column });
+            if (exists == 0) await c.ExecuteAsync($"ALTER TABLE {table} ADD COLUMN {ddl}");
+        }
+        await Col(Tables.OwnPlan, "paymode", "`paymode` VARCHAR(10) NOT NULL DEFAULT 'rstpay'");
+        await Col(Tables.OwnPlan, "rst_days", "`rst_days` INT NOT NULL DEFAULT 30");
+        await Col(Tables.OwnPlan, "rst_paymenttype", "`rst_paymenttype` INT NOT NULL DEFAULT 1");
+        await Col(Tables.OwnPlan, "rst_rebilling", "`rst_rebilling` TINYINT NOT NULL DEFAULT 0");
     }
 
     public sealed record TableInfo(string Name, string Engine, string Collation, long Rows, long DataBytes, long IndexBytes);

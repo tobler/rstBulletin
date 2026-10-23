@@ -30,6 +30,14 @@ public sealed class PremiumService(Db db, BoardCache cache, ForumAdminService ad
         public bool Active { get; set; } = true;
         public int DisplayOrder { get; set; }
         public bool Highlight { get; set; }
+        /// <summary>„rstpay“ (Session über die rstpay-API) oder „link“ (fester Bezahl-Link mit Platzhaltern).</summary>
+        public string PayMode { get; set; } = "rstpay";
+        /// <summary>rstpay: Laufzeit in Tagen (Parameter duration).</summary>
+        public int RstDays { get; set; } = 30;
+        /// <summary>rstpay: Zahlart (paymenttype), 1 = Lastschrift.</summary>
+        public int RstPaymentType { get; set; } = 1;
+        /// <summary>rstpay: wiederkehrende Abbuchung (rebilling).</summary>
+        public bool RstRebilling { get; set; }
 
         public bool IsLifetime => Months == 0;
         public string PriceText => (PriceCents / 100m).ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("de-DE")) + (Currency == "EUR" ? " €" : " " + Currency);
@@ -40,7 +48,8 @@ public sealed class PremiumService(Db db, BoardCache cache, ForumAdminService ad
     private const string PlanCols = """
         CAST(planid AS SIGNED) AS PlanId, title AS Title, description AS Description, CAST(price_cents AS SIGNED) AS PriceCents, currency AS Currency,
         CAST(months AS SIGNED) AS Months, CAST(groupid AS SIGNED) AS GroupId, primarygroup <> 0 AS PrimaryGroup, payurl AS PayUrl,
-        active <> 0 AS Active, CAST(displayorder AS SIGNED) AS DisplayOrder, highlight <> 0 AS Highlight
+        active <> 0 AS Active, CAST(displayorder AS SIGNED) AS DisplayOrder, highlight <> 0 AS Highlight,
+        paymode AS PayMode, CAST(rst_days AS SIGNED) AS RstDays, CAST(rst_paymenttype AS SIGNED) AS RstPaymentType, rst_rebilling <> 0 AS RstRebilling
         """;
 
     public async Task<List<Plan>> PlansAsync(bool onlyActive)
@@ -62,19 +71,22 @@ public sealed class PremiumService(Db db, BoardCache cache, ForumAdminService ad
         {
             p.PlanId, title = p.Title.Trim(), description = p.Description.Trim(), price = Math.Max(0, p.PriceCents), currency = (p.Currency ?? "EUR").Trim().ToUpperInvariant(),
             months = Math.Max(0, p.Months), p.GroupId, primary = p.PrimaryGroup ? 1 : 0, payurl = p.PayUrl.Trim(), active = p.Active ? 1 : 0, p.DisplayOrder, hl = p.Highlight ? 1 : 0,
+            mode = p.PayMode == "link" ? "link" : "rstpay", days = Math.Max(0, p.RstDays), ptype = p.RstPaymentType, rebill = p.RstRebilling ? 1 : 0,
         };
         if (p.PlanId > 0)
         {
             await c.ExecuteAsync($"""
                 UPDATE {Tables.OwnPlan} SET title = @title, description = @description, price_cents = @price, currency = @currency, months = @months,
-                  groupid = @GroupId, primarygroup = @primary, payurl = @payurl, active = @active, displayorder = @DisplayOrder, highlight = @hl
+                  groupid = @GroupId, primarygroup = @primary, payurl = @payurl, active = @active, displayorder = @DisplayOrder, highlight = @hl,
+                  paymode = @mode, rst_days = @days, rst_paymenttype = @ptype, rst_rebilling = @rebill
                 WHERE planid = @PlanId
                 """, args);
             return p.PlanId;
         }
         return await c.ExecuteScalarAsync<int>($"""
-            INSERT INTO {Tables.OwnPlan} (title, description, price_cents, currency, months, groupid, primarygroup, payurl, active, displayorder, highlight)
-            VALUES (@title, @description, @price, @currency, @months, @GroupId, @primary, @payurl, @active, @DisplayOrder, @hl);
+            INSERT INTO {Tables.OwnPlan} (title, description, price_cents, currency, months, groupid, primarygroup, payurl, active, displayorder, highlight,
+                paymode, rst_days, rst_paymenttype, rst_rebilling)
+            VALUES (@title, @description, @price, @currency, @months, @GroupId, @primary, @payurl, @active, @DisplayOrder, @hl, @mode, @days, @ptype, @rebill);
             SELECT LAST_INSERT_ID();
             """, args);
     }
@@ -182,6 +194,10 @@ public sealed class PremiumService(Db db, BoardCache cache, ForumAdminService ad
         /// <summary>Transaktions-/Abo-Nummer von rstpay – gleiche Nummer erneut = Verlängerung/Aktualisierung statt neues Abo.</summary>
         public string? Reference { get; set; }
         public string Source { get; set; } = "api";
+        /// <summary>Kein Enddatum setzen – das Zahlungssystem meldet das Ende selbst (rstpay „cancel“).</summary>
+        public bool OpenEnded { get; set; }
+        /// <summary>Hauptgruppe hart setzen wie das alte rstpay-Skript (usergroupid = X), statt Zusatzgruppe.</summary>
+        public bool SetPrimary { get; set; }
     }
 
     public sealed record Result(bool Ok, string? Error, Subscription? Subscription = null, int Status = 200);
@@ -218,7 +234,7 @@ public sealed class PremiumService(Db db, BoardCache cache, ForumAdminService ad
         // Ende berechnen: ausdrücklich angegeben, sonst Laufzeit – bei Verlängerung ab dem bisherigen Ende
         long end;
         if (r.Until is long u && u > 0) end = u;
-        else if (plan == null || plan.IsLifetime) end = 0;
+        else if (r.OpenEnded || plan == null || plan.IsLifetime) end = 0;
         else
         {
             var currentEnd = await c.ExecuteScalarAsync<long?>($"""
@@ -252,7 +268,8 @@ public sealed class PremiumService(Db db, BoardCache cache, ForumAdminService ad
         }
 
         // Gruppe vergeben (ist sie schon gesetzt, passiert nichts)
-        await admin.AddGroupMemberAsync(user.UserId, groupId, plan?.PrimaryGroup ?? false);
+        if (r.SetPrimary) await admin.SetPrimaryGroupAsync(user.UserId, groupId);
+        else await admin.AddGroupMemberAsync(user.UserId, groupId, plan?.PrimaryGroup ?? false);
         cache.Invalidate();
         log.LogInformation("Premium: {User} → Gruppe {Group} bis {End} (Ref {Ref})", user.DisplayName, groupId, end == 0 ? "lebenslang" : ForumTime.Full(end), reference);
         return new(true, null, await GetAsync(c, id));
@@ -294,6 +311,14 @@ public sealed class PremiumService(Db db, BoardCache cache, ForumAdminService ad
         await RemoveGroupIfUnusedAsync(c, user.UserId, groupId, now);
         log.LogInformation("Premium beendet: {User} ← Gruppe {Group} (Ref {Ref})", user.DisplayName, groupId, reference);
         return new(true, null);
+    }
+
+    /// <summary>Aktive Abos eines Benutzers für eine Gruppe beenden, ohne die Gruppe anzufassen (rstpay setzt sie selbst).</summary>
+    public async Task EndSubscriptionsAsync(long userId, int groupId, string status)
+    {
+        await using var c = await db.OpenAsync();
+        await c.ExecuteAsync($"UPDATE {Tables.OwnSubscription} SET status = @status, updated = @now WHERE userid = @userId AND groupid = @groupId AND status = 'active'",
+            new { userId, groupId, status, now = ForumTime.Now });
     }
 
     private async Task RemoveGroupIfUnusedAsync(MySqlConnector.MySqlConnection c, long userId, int groupId, long now)

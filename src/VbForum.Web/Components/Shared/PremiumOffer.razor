@@ -32,13 +32,13 @@
                         {
                             <a class="btn @(p.Highlight ? "btn-primary" : "")" href="/login?returnUrl=@Uri.EscapeDataString(ReturnUrl)">Anmelden &amp; buchen</a>
                         }
-                        else if (string.IsNullOrWhiteSpace(p.PayUrl))
+                        else if (p.PayMode != "rstpay" && string.IsNullOrWhiteSpace(p.PayUrl))
                         {
                             <span class="btn" aria-disabled="true" style="opacity:.6">Bald verfügbar</span>
                         }
                         else
                         {
-                            <a class="btn @(p.Highlight ? "btn-primary" : "")" href="/premium/buy/@p.PlanId?returnUrl=@Uri.EscapeDataString(ReturnUrl)" rel="nofollow">Jetzt buchen</a>
+                            <a class="btn @(p.Highlight ? "btn-primary" : "")" href="/premium/buy/@p.PlanId?returnUrl=@Uri.EscapeDataString(ReturnUrl)" rel="nofollow" data-enhance-nav="false">Jetzt buchen</a>
                         }
                     </div>
                 }
