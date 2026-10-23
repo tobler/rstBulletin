@@ -18,9 +18,9 @@ public static class Theme
         if (Normalize(theme) is { } t)
             http.Response.Cookies.Append(Cookie, t, new CookieOptions
             {
-                MaxAge = TimeSpan.FromDays(365), HttpOnly = false, SameSite = SameSiteMode.Lax, IsEssential = true, Secure = http.Request.IsHttps,
+                MaxAge = TimeSpan.FromDays(365), HttpOnly = false, SameSite = SameSiteMode.Lax, IsEssential = true, Secure = http.Request.IsHttps, Path = "/",
             });
-        else http.Response.Cookies.Delete(Cookie);
+        else http.Response.Cookies.Delete(Cookie, new CookieOptions { Path = "/" });
     }
 
     /// <summary>Beim Anmelden die gespeicherte Einstellung des Benutzers übernehmen.</summary>

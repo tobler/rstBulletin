@@ -148,6 +148,8 @@
     document.documentElement.setAttribute('data-theme', next);
     var meta = document.querySelector('meta[name=color-scheme]'); if (meta) meta.setAttribute('content', next);
     f.querySelector('input[name=theme]').value = next;
+    // Cookie sofort selbst setzen (1 Jahr) – unabhängig davon, ob die Anfrage an den Server durchgeht
+    document.cookie = 'vbf-theme=' + next + '; max-age=31536000; path=/; samesite=lax' + (location.protocol === 'https:' ? '; secure' : '');
     fetch(f.action, { method: 'POST', body: new FormData(f), credentials: 'same-origin', redirect: 'manual' }).catch(function () { });
   }, true);
 })();

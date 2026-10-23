@@ -1,10 +1,23 @@
 @inject BoardCache Cache
+@inject CurrentUser Current
+@inject UserRepository Users
 <!DOCTYPE html>
 <html lang="de" data-theme="@_theme">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="@(_theme ?? "light dark")" />
+    @* Hell/Dunkel sofort aus dem Cookie anwenden – auch wenn der Browser eine Seite aus dem Cache wiederherstellt *@
+    <script>
+        (function () {
+            function apply() {
+                var m = document.cookie.match(/(?:^|; )vbf-theme=(light|dark)/), d = document.documentElement;
+                if (m) d.setAttribute('data-theme', m[1]); else d.removeAttribute('data-theme');
+            }
+            apply();
+            window.addEventListener('pageshow', apply);
+        })();
+    </script>
     <base href="/" />
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["app.css"]" />
@@ -28,6 +41,20 @@
     protected override async Task OnInitializedAsync()
     {
         _theme = VbForum.Web.Infrastructure.Theme.FromRequest(HttpContext);
+        // Kein Cookie (anderer Browser, Cookies gelöscht), aber angemeldet → gespeicherte Einstellung nehmen und Cookie wieder setzen
+        if (_theme == null && HttpContext?.User.Identity?.IsAuthenticated == true)
+        {
+            try
+            {
+                var u = await Current.GetAsync();
+                if (!u.IsGuest && VbForum.Web.Infrastructure.Theme.Normalize(await Users.GetPrefAsync(u.UserId, VbForum.Web.Infrastructure.Theme.Pref)) is { } pref)
+                {
+                    _theme = pref;
+                    if (!HttpContext.Response.HasStarted) VbForum.Web.Infrastructure.Theme.SetCookie(HttpContext, pref);
+                }
+            }
+            catch { /* nicht kritisch */ }
+        }
         try
         {
             var f = (await Cache.GetAsync()).Settings.FaviconFile;
