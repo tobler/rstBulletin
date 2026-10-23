@@ -297,6 +297,23 @@ public sealed class UserRepository(Db db)
 
     public const string DeletedUserName = "Gelöschter User";
 
+    // ---------- Persönliche Einstellungen (eigene Tabelle vbf_userpref) ----------
+
+    public async Task<string?> GetPrefAsync(long userId, string name)
+    {
+        await using var c = await db.OpenAsync();
+        return await c.ExecuteScalarAsync<string?>($"SELECT value FROM {Tables.OwnUserPref} WHERE userid = @userId AND name = @name", new { userId, name });
+    }
+
+    public async Task SetPrefAsync(long userId, string name, string? value)
+    {
+        await using var c = await db.OpenAsync();
+        if (string.IsNullOrEmpty(value))
+            await c.ExecuteAsync($"DELETE FROM {Tables.OwnUserPref} WHERE userid = @userId AND name = @name", new { userId, name });
+        else
+            await c.ExecuteAsync($"REPLACE INTO {Tables.OwnUserPref} (userid, name, value) VALUES (@userId, @name, @value)", new { userId, name, value });
+    }
+
     /// <summary>
     /// Löscht ein Konto. Verbleibende Beiträge werden Gastbeiträge (userid = 0) mit dem Namen „Gelöschter User“ –
     /// auch in Themen-/Forenübersichten und bei gesendeten privaten Nachrichten.
@@ -311,7 +328,7 @@ public sealed class UserRepository(Db db)
         await c.ExecuteAsync($"UPDATE {T.Thread} SET lastposterid = 0, lastposter = @name WHERE lastposterid = @userId", p, commandTimeout: 600);
         await c.ExecuteAsync($"UPDATE {T.Forum} SET lastposterid = 0, lastposter = @name WHERE lastposterid = @userId", p);
         await c.ExecuteAsync($"UPDATE {T.PmText} SET fromuserid = 0, fromusername = @name WHERE fromuserid = @userId", p, commandTimeout: 600);
-        foreach (var t in new[] { T.UserField, T.UserTextField, T.CustomAvatar, T.SubscribeThread, T.ThreadRead, T.ForumRead, T.Moderator, T.UserBan, T.Administrator, Tables.OwnUserAuth, Tables.OwnToken })
+        foreach (var t in new[] { T.UserField, T.UserTextField, T.CustomAvatar, T.SubscribeThread, T.ThreadRead, T.ForumRead, T.Moderator, T.UserBan, T.Administrator, Tables.OwnUserAuth, Tables.OwnToken, Tables.OwnUserPref })
             await c.ExecuteAsync($"DELETE FROM {t} WHERE userid = @userId", new { userId });
         var pmTexts = (await c.QueryAsync<long>($"SELECT pmtextid FROM {T.Pm} WHERE userid = @userId", new { userId })).ToList();
         await c.ExecuteAsync($"DELETE FROM {T.Pm} WHERE userid = @userId", new { userId });

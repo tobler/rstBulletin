@@ -36,6 +36,13 @@ public sealed class Schema(Db db)
               `updated` INT UNSIGNED NOT NULL
             ) DEFAULT CHARSET=utf8mb4;
 
+            CREATE TABLE IF NOT EXISTS {Tables.OwnUserPref} (
+              `userid` INT UNSIGNED NOT NULL,
+              `name` VARCHAR(40) NOT NULL,
+              `value` VARCHAR(255) NOT NULL DEFAULT '',
+              PRIMARY KEY (`userid`, `name`)
+            ) DEFAULT CHARSET=utf8mb4;
+
             CREATE TABLE IF NOT EXISTS {Tables.OwnAuditLog} (
               `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
               `dateline` INT UNSIGNED NOT NULL,

@@ -1,9 +1,10 @@
 @inject BoardCache Cache
 <!DOCTYPE html>
-<html lang="de">
+<html lang="de" data-theme="@_theme">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="@(_theme ?? "light dark")" />
     <base href="/" />
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["app.css"]" />
@@ -20,10 +21,13 @@
 </html>
 
 @code {
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
     private string _favicon = "/favicon.svg";
+    private string? _theme;
 
     protected override async Task OnInitializedAsync()
     {
+        _theme = VbForum.Web.Infrastructure.Theme.FromRequest(HttpContext);
         try
         {
             var f = (await Cache.GetAsync()).Settings.FaviconFile;

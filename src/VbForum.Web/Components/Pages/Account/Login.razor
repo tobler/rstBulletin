@@ -6,6 +6,7 @@
 @inject LoginThrottle Throttle
 @inject TokenRepository Audit
 @inject NavigationManager Nav
+@inject UserRepository Users
 
 <PageTitle>Anmelden</PageTitle>
 
@@ -94,6 +95,7 @@
         var principal = AuthSetup.CreatePrincipal(r.User.UserId, r.User.DisplayName, AuthService.Stamp(r.User));
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal,
             new AuthenticationProperties { IsPersistent = Input.Remember, AllowRefresh = true });
+        await Theme.ApplyUserPrefAsync(HttpContext, Users, r.User.UserId);
         Nav.NavigateTo(SafeReturn(Input.ReturnUrl ?? ReturnUrl), forceLoad: true);
     }
 }

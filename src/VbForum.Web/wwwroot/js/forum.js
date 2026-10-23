@@ -132,3 +132,22 @@
     if (e.key === 'Escape') document.querySelectorAll('details.user-menu[open]').forEach(function (d) { d.removeAttribute('open'); });
   });
 })();
+
+// Hell/Dunkel: sofort umschalten, im Hintergrund speichern (ohne JS: normales Formular mit Neuladen)
+(function () {
+  function effective() {
+    var t = document.documentElement.getAttribute('data-theme');
+    if (t === 'dark' || t === 'light') return t;
+    return window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  document.addEventListener('submit', function (e) {
+    var f = e.target;
+    if (!f || !f.matches || !f.matches('form[data-theme-toggle]')) return;
+    e.preventDefault();
+    var next = effective() === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    var meta = document.querySelector('meta[name=color-scheme]'); if (meta) meta.setAttribute('content', next);
+    f.querySelector('input[name=theme]').value = next;
+    fetch(f.action, { method: 'POST', body: new FormData(f), credentials: 'same-origin', redirect: 'manual' }).catch(function () { });
+  }, true);
+})();

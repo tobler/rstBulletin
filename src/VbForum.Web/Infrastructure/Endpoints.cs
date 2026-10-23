@@ -317,6 +317,16 @@ public static class Endpoints
             return Back(http, "/");
         }).RequireAuthorization("Admin");
 
+        // Darstellung: hell / dunkel / automatisch – Cookie + beim Benutzer speichern
+        app.MapPost("/theme", async (HttpContext http, [FromForm] string? theme, UserRepository users) =>
+        {
+            var t = Theme.Normalize(theme);
+            Theme.SetCookie(http, t);
+            var u = await http.ForumUserAsync();
+            if (!u.IsGuest) await users.SetPrefAsync(u.UserId, Theme.Pref, t);
+            return Back(http, "/");
+        });
+
         app.MapPost("/account/avatar", async (HttpContext http, IFormFile? file, [FromForm] string? remove, UserRepository users, BoardCache cache) =>
         {
             var u = await http.ForumUserAsync();

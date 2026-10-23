@@ -12,6 +12,19 @@
     <AccountShell User="_user!" Active="subs">
         @if (_message != null) { <div class="alert alert-ok" role="status">@_message</div> }
 
+        <form method="post" action="/theme" class="card card-pad stack" style="gap:8px" data-enhance="false">
+            <AntiforgeryToken />
+            <input type="hidden" name="returnUrl" value="/account/subscriptions" />
+            <h2 class="card-title">Darstellung</h2>
+            <div class="row" style="gap:16px;flex-wrap:wrap">
+                <label class="check"><input type="radio" name="theme" value="" checked="@(_theme == null)" data-autosubmit />Automatisch (wie Gerät)</label>
+                <label class="check"><input type="radio" name="theme" value="light" checked="@(_theme == "light")" data-autosubmit />Hell</label>
+                <label class="check"><input type="radio" name="theme" value="dark" checked="@(_theme == "dark")" data-autosubmit />Dunkel</label>
+            </div>
+            <noscript><button type="submit" class="btn btn-sm">Übernehmen</button></noscript>
+            <p class="small muted" style="margin:0">Wird in deinem Konto gespeichert und gilt auf allen Geräten, auf denen du angemeldet bist.</p>
+        </form>
+
         <EditForm Model="Settings" FormName="notify" OnSubmit="SaveAsync" class="card card-pad stack" style="gap:4px" Enhance>
             <h2 class="card-title" style="margin-bottom:10px">Benachrichtigungen</h2>
             @* Sorgt dafür, dass das Formular auch ohne gesetzte Häkchen ankommt *@
@@ -57,6 +70,7 @@
     [SupplyParameterFromForm(FormName = "notify")] public NotifyInput? Settings { get; set; }
 
     private bool _loaded, _smtp;
+    private string? _theme;
     private ForumUser? _user;
     private List<Subscription> _subs = new();
     private string? _message;
@@ -73,6 +87,7 @@
                 Settings = new NotifyInput { AutoSubscribe = row!.AutoSubscribe >= 0, Email = row.AutoSubscribe >= 1, PmPopup = row.PmPopup != 0 };
             }
             _subs = await Subs.ListAsync(_user.UserId);
+            _theme = VbForum.Web.Infrastructure.Theme.Normalize(await Users.GetPrefAsync(_user.UserId, VbForum.Web.Infrastructure.Theme.Pref));
         }
         finally { _loaded = true; }
     }

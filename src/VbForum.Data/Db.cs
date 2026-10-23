@@ -120,6 +120,7 @@ public sealed class Tables(string p)
     public const string OwnToken = "`vbf_token`";
     public const string OwnAuditLog = "`vbf_auditlog`";
     public const string OwnAsset = "`vbf_asset`";
+    public const string OwnUserPref = "`vbf_userpref`";
 }
 
 public sealed class Db(DbSettingsStore store)

@@ -36,6 +36,14 @@
             <input id="q" name="q" type="search" placeholder="Forum durchsuchen …" />
         </form>
         <div class="user-area">
+            <form method="post" action="/theme" class="inline theme-toggle" data-theme-toggle>
+                <AntiforgeryToken />
+                <input type="hidden" name="theme" value="dark" />
+                <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+                <button type="submit" class="icon-btn" title="Hell/Dunkel umschalten" aria-label="Hell/Dunkel umschalten">
+                    <span class="moon"><Icon Name="moon" Size="20" /></span><span class="sun"><Icon Name="sun" Size="20" /></span>
+                </button>
+            </form>
             @if (_user == null || _user.IsGuest)
             {
                 <a href="/login?returnUrl=@Uri.EscapeDataString(ReturnUrl)" class="btn btn-sm">Anmelden</a>

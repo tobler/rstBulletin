@@ -1,4 +1,4 @@
-/* VbForum – Layout nach Mockup. Farben als Tokens, Dark Mode über prefers-color-scheme. */
+/* VbForum – Layout nach Mockup. Farben als Tokens. Dark Mode: automatisch (prefers-color-scheme) oder fest über html[data-theme]. */
 :root {
   --bg: #F4F5F7; --card: #FFFFFF; --head: #FAFBFC; --border: #E3E6EB; --border-soft: #EEF0F3; --input-border: #DDE1E7;
   --ink: #16191F; --ink-2: #2B3240; --muted: #5A6170; --muted-2: #4A5160;
@@ -12,7 +12,7 @@
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+html:not([data-theme="light"]) {
     --bg: #111318; --card: #191C22; --head: #1D2027; --border: #2A2F38; --border-soft: #23272F; --input-border: #343A45;
     --ink: #E8EAEE; --ink-2: #D2D6DD; --muted: #9AA2B1; --muted-2: #A9B0BD;
     --accent: #7AA2F7; --accent-hover: #A5C0FA; --accent-soft: #1E2A44; --accent-border: #2E4472; --own-bg: #18202F;
@@ -22,6 +22,15 @@
     color-scheme: dark;
   }
 }
+html[data-theme="dark"] {
+    --bg: #111318; --card: #191C22; --head: #1D2027; --border: #2A2F38; --border-soft: #23272F; --input-border: #343A45;
+    --ink: #E8EAEE; --ink-2: #D2D6DD; --muted: #9AA2B1; --muted-2: #A9B0BD;
+    --accent: #7AA2F7; --accent-hover: #A5C0FA; --accent-soft: #1E2A44; --accent-border: #2E4472; --own-bg: #18202F;
+    --chip: #262B34; --sticky-bg: #1E1C18; --unread-bg: #182033;
+    --warn-bg: #3A2716; --warn-fg: #F5B98A; --ok-bg: #16301F; --ok-fg: #8FD3A7; --danger: #F08A80; --danger-bg: #3A1C1A;
+    --badge: #E06A2C; --quote-bg: #1F232B; --code-bg: #0B0D10; --code-fg: #E8EAEE; --mark: #6B5A1E;
+    color-scheme: dark;
+  }
 
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -67,8 +76,15 @@ h1:focus, h1:focus-visible { outline: none; }
 .avatar { --size: 34px; width: var(--size); height: var(--size); border-radius: 50%; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: calc(var(--size) * 0.36); overflow: hidden; background: #DCE6FA; color: #1F3F86; object-fit: cover; }
 .avatar.c1 { background: #E4F2EA; color: #1E5B3A; } .avatar.c2 { background: #FBEBDD; color: #7A3B10; } .avatar.c3 { background: #ECE6F7; color: #4B2E83; }
 @media (prefers-color-scheme: dark) {
-  .avatar { background: #24365C; color: #C9D8FA; } .avatar.c1 { background: #1D3A28; color: #A9DDB9; } .avatar.c2 { background: #42291A; color: #F2C49E; } .avatar.c3 { background: #33284A; color: #D5C7F0; }
+html:not([data-theme="light"]) .avatar { background: #24365C; color: #C9D8FA; }
+html:not([data-theme="light"]) .avatar.c1 { background: #1D3A28; color: #A9DDB9; }
+html:not([data-theme="light"]) .avatar.c2 { background: #42291A; color: #F2C49E; }
+html:not([data-theme="light"]) .avatar.c3 { background: #33284A; color: #D5C7F0; }
 }
+html[data-theme="dark"] .avatar { background: #24365C; color: #C9D8FA; }
+html[data-theme="dark"] .avatar.c1 { background: #1D3A28; color: #A9DDB9; }
+html[data-theme="dark"] .avatar.c2 { background: #42291A; color: #F2C49E; }
+html[data-theme="dark"] .avatar.c3 { background: #33284A; color: #D5C7F0; }
 
 /* ---------- Seite ---------- */
 main.page { padding-top: 24px; padding-bottom: 48px; display: flex; flex-direction: column; gap: 20px; }
@@ -84,7 +100,10 @@ main.page { padding-top: 24px; padding-bottom: 48px; display: flex; flex-directi
 .btn:hover { background: var(--chip); color: var(--ink); }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
-@media (prefers-color-scheme: dark) { .btn-primary, .btn-primary:hover { color: #0B1220; } }
+@media (prefers-color-scheme: dark) {
+html:not([data-theme="light"]) .btn-primary, html:not([data-theme="light"]) .btn-primary:hover { color: #0B1220; }
+}
+html[data-theme="dark"] .btn-primary, html[data-theme="dark"] .btn-primary:hover { color: #0B1220; }
 .btn-danger { color: var(--danger); }
 .btn-danger:hover { background: var(--danger-bg); color: var(--danger); }
 .btn-ghost { border-color: transparent; background: transparent; font-weight: 500; color: var(--muted-2); }
@@ -170,7 +189,10 @@ select, .select { min-height: 40px; padding: 0 10px; border-radius: 8px; border:
 .pager a, .pager span { min-width: 36px; min-height: 36px; padding: 0 8px; display: flex; align-items: center; justify-content: center; border-radius: 8px; color: var(--ink); text-decoration: none; }
 .pager a:hover { background: var(--chip); }
 .pager .on { background: var(--accent); color: #fff; font-weight: 600; }
-@media (prefers-color-scheme: dark) { .pager .on { color: #0B1220; } }
+@media (prefers-color-scheme: dark) {
+html:not([data-theme="light"]) .pager .on { color: #0B1220; }
+}
+html[data-theme="dark"] .pager .on { color: #0B1220; }
 .pager .gap { color: var(--muted); min-width: 20px; }
 
 /* ---------- Beiträge ---------- */
@@ -365,3 +387,10 @@ body:has(.admin-shell) .site-footer .container { max-width: none; }
 /* PN-Verlauf */
 .pm-msg.pm-mine { background: var(--own-bg); }
 .pm-msg.pm-current { box-shadow: 0 0 0 2px var(--accent-border); }
+
+/* Umschalter Hell/Dunkel im Kopf */
+.theme-toggle .moon { display: inline-flex; } .theme-toggle .sun { display: none; }
+html[data-theme="dark"] .theme-toggle .moon { display: none; } html[data-theme="dark"] .theme-toggle .sun { display: inline-flex; }
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) .theme-toggle .moon { display: none; } html:not([data-theme="light"]) .theme-toggle .sun { display: inline-flex; }
+}
