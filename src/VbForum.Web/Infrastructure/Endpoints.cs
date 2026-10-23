@@ -323,6 +323,9 @@ public static class Endpoints
         {
             var u = await http.ForumUserAsync();
             if (u.IsGuest) return Results.LocalRedirect($"/login?returnUrl={Uri.EscapeDataString("/premium")}");
+            // Gesperrte und noch nicht bestätigte Konten können nicht buchen
+            if (u.IsBanned || u.PrimaryGroupId == (await http.RequestServices.GetRequiredService<BoardCache>().GetAsync()).Settings.AwaitingEmailGroupId)
+                return Results.LocalRedirect("/premium");
             var plan = await premium.PlanAsync(planId);
             if (plan == null || !plan.Active) return Results.LocalRedirect("/premium");
             var back = !string.IsNullOrEmpty(returnUrl) && returnUrl.StartsWith('/') && !returnUrl.StartsWith("//") ? returnUrl : "/premium";

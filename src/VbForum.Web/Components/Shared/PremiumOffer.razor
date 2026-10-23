@@ -13,7 +13,15 @@
                 <div class="post-body" style="font-size:15px">@_text</div>
             </div>
         </div>
-        @if (User.IsGuest)
+        @if (User.IsBanned)
+        {
+            <p style="margin:0">Dein Konto ist gesperrt. Bitte wende dich an die Forenleitung.</p>
+        }
+        else if (_awaitingEmail)
+        {
+            <p style="margin:0">Bitte bestätige zuerst deine E-Mail-Adresse über den Link in der Willkommens-Mail. Danach kannst du hier Premium buchen.</p>
+        }
+        else if (User.IsGuest)
         {
             @* Buchen geht nur mit Konto – Gäste melden sich erst an oder registrieren sich *@
             <p style="margin:0">Um Premium zu buchen, melde dich bitte an. Noch kein Konto? Die Registrierung ist kostenlos.</p>
@@ -60,11 +68,13 @@
     [Parameter] public string ReturnUrl { get; set; } = "/premium";
 
     private List<PremiumService.Plan>? _plans;
+    private bool _awaitingEmail;
     private MarkupString _text;
 
     protected override async Task OnInitializedAsync()
     {
         _plans = await Premium.PlansAsync(onlyActive: true);
+        _awaitingEmail = !User.IsGuest && User.PrimaryGroupId == (await Cache.GetAsync()).Settings.AwaitingEmailGroupId;
         _text = Renderer.Render((await Cache.GetAsync()).Settings.PremiumText, await Renderer.ContextAsync(null));
     }
 }
