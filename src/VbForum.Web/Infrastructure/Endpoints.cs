@@ -334,7 +334,10 @@ public static class Endpoints
             {
                 // Session bei rstpay anfordern (Händlerdaten bleiben auf dem Server) und weiterleiten
                 var r = await rstpay.CreatePaymentUrlAsync(plan, u);
-                return r.Url != null ? Results.Redirect(r.Url) : Results.LocalRedirect($"/premium?error={Uri.EscapeDataString(r.Error!)}");
+                if (r.Url != null) return Results.Redirect(r.Url);
+                // Admins sehen die technische Ursache direkt
+                var msg = u.IsAdmin && r.Detail != null ? $"{r.Error} (Admin-Info: {r.Detail})" : r.Error!;
+                return Results.LocalRedirect($"/premium?error={Uri.EscapeDataString(msg)}");
             }
             if (string.IsNullOrWhiteSpace(plan.PayUrl)) return Results.LocalRedirect("/premium");
             back += (back.Contains('?') ? "&" : "?") + "done=1";

@@ -17,7 +17,8 @@ public sealed class RstPayService(Db db, BoardCache cache, PremiumService premiu
 
     // ---------- Session anfordern ----------
 
-    public sealed record SessionResult(string? Url, string? Error);
+    /// <param name="Detail">Technische Ursache (nur für Admins angezeigt).</param>
+    public sealed record SessionResult(string? Url, string? Error, string? Detail = null);
 
     public async Task<SessionResult> CreatePaymentUrlAsync(PremiumService.Plan plan, ForumUser u)
     {
@@ -34,20 +35,33 @@ public sealed class RstPayService(Db db, BoardCache cache, PremiumService premiu
                   $"&description={E($"{plan.Title} - Username: {u.Username}")}" +
                   $"&rebilling={(plan.RstRebilling ? 1 : 0)}&currency={E(plan.Currency)}" +
                   $"&param1={u.UserId}&param2={E(u.Username)}";
+        var safeUrl = url.Replace(E(s.RstPayMerchantKey), "***");
         try
         {
-            var session = (await Http.GetStringAsync(url)).Trim();
-            if (session.Length is 0 or > 200 || session.Any(ch => !(char.IsLetterOrDigit(ch) || ch is '-' or '_')))
+            using var resp = await Http.GetAsync(url);
+            var body = (await resp.Content.ReadAsStringAsync()).Trim();
+            var shortBody = body.Length > 300 ? body[..300] : body;
+            if (!resp.IsSuccessStatusCode)
             {
-                log.LogWarning("rstpay: unerwartete Antwort auf requestsession: {Answer}", session.Length > 200 ? session[..200] : session);
-                return new(null, "Der Zahlungsdienst hat keine gültige Sitzung geliefert. Bitte später erneut versuchen.");
+                log.LogWarning("rstpay: requestsession HTTP {Status}: {Body} ({Url})", (int)resp.StatusCode, shortBody, safeUrl);
+                return new(null, "Der Zahlungsdienst hat die Anfrage abgelehnt. Bitte später erneut versuchen.",
+                    $"rstpay antwortete mit HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}: {shortBody}");
             }
-            return new($"{baseUrl}/payment/{session}", null);
+            if (body.Length is 0 or > 200 || body.Any(ch => !(char.IsLetterOrDigit(ch) || ch is '-' or '_')))
+            {
+                log.LogWarning("rstpay: unerwartete Antwort auf requestsession: {Answer} ({Url})", shortBody, safeUrl);
+                return new(null, "Der Zahlungsdienst hat keine gültige Sitzung geliefert. Bitte später erneut versuchen.",
+                    $"Antwort von rstpay statt Session-ID: „{shortBody}“");
+            }
+            return new($"{baseUrl}/payment/{body}", null);
         }
         catch (Exception ex)
         {
-            log.LogWarning(ex, "rstpay: requestsession fehlgeschlagen");
-            return new(null, "Der Zahlungsdienst ist gerade nicht erreichbar. Bitte später erneut versuchen.");
+            log.LogWarning(ex, "rstpay: requestsession fehlgeschlagen ({Url})", safeUrl);
+            var root = ex;
+            while (root.InnerException != null) root = root.InnerException;
+            return new(null, "Der Zahlungsdienst ist gerade nicht erreichbar. Bitte später erneut versuchen.",
+                $"{(ex is TaskCanceledException ? "Zeitüberschreitung nach 20 Sekunden" : root.Message)} – Adresse: {baseUrl}");
         }
     }
 
