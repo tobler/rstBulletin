@@ -317,6 +317,20 @@ public static class Endpoints
             return Back(http, "/");
         }).RequireAuthorization("Admin");
 
+        // Premium buchen: Bezahl-Link mit Benutzerdaten füllen und zu rstpay weiterleiten
+        app.MapGet("/premium/buy/{planId:int}", async (int planId, string? returnUrl, HttpContext http, PremiumService premium, MailService mail, TokenRepository audit) =>
+        {
+            var u = await http.ForumUserAsync();
+            if (u.IsGuest) return Results.LocalRedirect($"/login?returnUrl={Uri.EscapeDataString("/premium")}");
+            var plan = await premium.PlanAsync(planId);
+            if (plan == null || !plan.Active || string.IsNullOrWhiteSpace(plan.PayUrl)) return Results.LocalRedirect("/premium");
+            var back = !string.IsNullOrEmpty(returnUrl) && returnUrl.StartsWith('/') && !returnUrl.StartsWith("//") ? returnUrl : "/premium";
+            back += (back.Contains('?') ? "&" : "?") + "done=1";
+            var url = PremiumService.BuildPayUrl(plan, u, u.Email, await mail.AbsoluteUrlAsync(back));
+            await audit.LogAsync(u, "premium.checkout", $"Plan {plan.PlanId} {plan.Title}", http.ClientIp());
+            return Results.Redirect(url);
+        });
+
         // Darstellung: hell / dunkel / automatisch – Cookie + beim Benutzer speichern
         app.MapPost("/theme", async (HttpContext http, [FromForm] string? theme, UserRepository users) =>
         {

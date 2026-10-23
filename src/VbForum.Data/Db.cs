@@ -121,6 +121,8 @@ public sealed class Tables(string p)
     public const string OwnAuditLog = "`vbf_auditlog`";
     public const string OwnAsset = "`vbf_asset`";
     public const string OwnUserPref = "`vbf_userpref`";
+    public const string OwnPlan = "`vbf_plan`";
+    public const string OwnSubscription = "`vbf_subscription`";
 }
 
 public sealed class Db(DbSettingsStore store)

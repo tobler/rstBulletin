@@ -17,6 +17,7 @@
             <p class="muted" style="margin:0">Dieses Forum ist nur für berechtigte Mitglieder zugänglich.</p>
             @if (_user?.IsGuest == true) { <p style="margin:0"><a class="btn btn-primary" href="/login?returnUrl=@Uri.EscapeDataString("/" + Nav.ToBaseRelativePath(Nav.Uri))">Anmelden</a></p> }
         </div>
+        @if (_premium) { <PremiumOffer User="_user!" Title="@($"„{_lockedForum.DisplayTitle}“ ist ein Premium-Bereich")" ReturnUrl="@($"/premium?forum={_lockedForum.ForumId}")" /> }
     }
     else if (_forum == null)
     {
@@ -85,7 +86,14 @@
             }
         }
 
-        @if (!_forum.IsCategory && _titlesOnly)
+        @if (!_forum.IsCategory && _titlesOnly && _premium)
+        {
+            <div class="premium-strip">
+                <span><Icon Name="star" /> <strong>Premium-Bereich:</strong> Die Beiträge in diesem Forum können nur Premium-Mitglieder lesen.</span>
+                <a class="btn btn-primary btn-sm" href="/premium?forum=@_forum.ForumId">Premium-Zugang ansehen</a>
+            </div>
+        }
+        else if (!_forum.IsCategory && _titlesOnly)
         {
             <div class="alert alert-info">Du kannst in diesem Forum die Thementitel sehen, aber keine Beiträge lesen.@(_user!.IsGuest ? " Melde dich an – vielleicht hast du dann Zugriff." : "")</div>
         }
@@ -162,7 +170,7 @@
     private List<AnnouncementRepository.Announcement> _announcements = new();
     private PagedResult<ForumThread>? _result;
     private int _page = 1;
-    private bool _canPost, _titlesOnly;
+    private bool _canPost, _titlesOnly, _premium;
     private Forum? _lockedForum;
 
     private string SortKey => SortOptions.Any(o => o.Item1 == SortQ) ? SortQ! : (_forum?.DefaultSortField is "dateline" or "title" or "views" ? _forum.DefaultSortField : "lastpost");
@@ -191,6 +199,7 @@
         var perms = new Permissions(_snap);
         var f = _snap.Forum(Id);
         if (f == null) return;
+        _premium = PremiumService.IsPremiumForum(_snap, f);
         if (!perms.CanSeeForum(_user, f) && !perms.ShowsLockedTitles(_user, f))
         {
             if (perms.ShowsLocked(_user, f)) _lockedForum = f;

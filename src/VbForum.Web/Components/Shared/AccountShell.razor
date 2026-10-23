@@ -12,6 +12,7 @@
         <a href="/account/email" class="@(Active == "email" ? "active" : "")"><Icon Name="mail" />E-Mail-Adresse</a>
         <a href="/account/subscriptions" class="@(Active == "subs" ? "active" : "")"><Icon Name="bell" />Einstellungen &amp; Abos</a>
         <a href="/account/pm" class="@(Active == "pm" ? "active" : "")"><Icon Name="chat" />Private Nachrichten @if (User.PmUnread > 0) { <span class="count">@User.PmUnread</span> }</a>
+        <a href="/premium"><Icon Name="star" />Premium</a>
         <div class="sep"></div>
         <form method="post" action="/logout" style="margin:0">
             <AntiforgeryToken />

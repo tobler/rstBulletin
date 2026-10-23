@@ -65,6 +65,15 @@ public sealed class BoardSettings
     public int AvatarMaxKb { get; set; } = 200;
 
     public bool ImageProxy { get; set; } = true;
+
+    // ---------- Premium / kostenpflichtige Foren ----------
+    /// <summary>Foren (inkl. Unterforen), in denen statt „kein Zugriff“ die Abo-Angebote erscheinen.</summary>
+    public string PremiumForumIds { get; set; } = "";
+    /// <summary>Text über den Abo-Angeboten (BBCode).</summary>
+    public string PremiumText { get; set; } = "Dieser Bereich ist Premium-Mitgliedern vorbehalten. Mit einem Premium-Zugang kannst du alle Beiträge lesen und mitschreiben.";
+    /// <summary>Schlüssel für die Zahlungs-API (rstpay). Leer = API abgeschaltet.</summary>
+    public string PremiumApiKey { get; set; } = "";
+    public IReadOnlySet<int> PremiumForums => ParseIds(PremiumForumIds);
     public int MinSecondsBetweenPosts { get; set; } = 15;
 
     public bool SmtpConfigured => !string.IsNullOrWhiteSpace(SmtpHost) && !string.IsNullOrWhiteSpace(MailFrom);

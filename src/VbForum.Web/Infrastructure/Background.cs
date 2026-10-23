@@ -56,6 +56,8 @@ public sealed class ForumBackgroundService(ViewCounter views, IServiceProvider s
                     var cache = sp.GetRequiredService<BoardCache>();
                     var lifted = await sp.GetRequiredService<UserRepository>().LiftExpiredBansAsync((await cache.GetAsync()).Settings.RegisteredGroupId);
                     if (lifted > 0) log.LogInformation("{n} abgelaufene Sperren aufgehoben", lifted);
+                    var expired = await sp.GetRequiredService<PremiumService>().ExpireAsync();
+                    if (expired > 0) log.LogInformation("{n} abgelaufene Premium-Abos beendet", expired);
                     CleanImageCache();
                 }
             }

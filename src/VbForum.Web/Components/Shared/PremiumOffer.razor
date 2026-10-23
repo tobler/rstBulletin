@@ -1,0 +1,72 @@
+@* Abo-Angebote (Paywall) – in Premium-Foren, Themen und auf /premium *@
+@inject PremiumService Premium
+@inject BoardCache Cache
+@inject PostRenderer Renderer
+
+@if (_plans != null)
+{
+    <section class="card card-pad stack premium-offer">
+        <div class="row" style="gap:12px;align-items:flex-start">
+            <span class="premium-badge" aria-hidden="true"><Icon Name="star" Size="22" /></span>
+            <div class="stack" style="gap:6px;min-width:0">
+                <h2 class="card-title" style="margin:0">@(Title ?? "Premium-Bereich")</h2>
+                <div class="post-body" style="font-size:15px">@_text</div>
+            </div>
+        </div>
+        @if (_plans.Count == 0)
+        {
+            <p class="muted" style="margin:0">Derzeit sind keine Abos buchbar. Bitte wende dich an die Forenleitung.</p>
+        }
+        else
+        {
+            <div class="plan-grid">
+                @foreach (var p in _plans)
+                {
+                    <div class="plan @(p.Highlight ? "plan-hl" : "")">
+                        @if (p.Highlight) { <span class="plan-flag">Empfohlen</span> }
+                        <div class="plan-title">@p.Title</div>
+                        <div class="plan-price">@p.PriceText</div>
+                        <div class="plan-sub">@(p.IsLifetime ? "einmalig, lebenslanger Zugang" : p.DurationText)@(p.PerMonthText != null ? $" · {p.PerMonthText}" : "")</div>
+                        @if (!string.IsNullOrWhiteSpace(p.Description)) { <div class="small muted">@p.Description</div> }
+                        @if (User.IsGuest)
+                        {
+                            <a class="btn @(p.Highlight ? "btn-primary" : "")" href="/login?returnUrl=@Uri.EscapeDataString(ReturnUrl)">Anmelden &amp; buchen</a>
+                        }
+                        else if (string.IsNullOrWhiteSpace(p.PayUrl))
+                        {
+                            <span class="btn" aria-disabled="true" style="opacity:.6">Bald verfügbar</span>
+                        }
+                        else
+                        {
+                            <a class="btn @(p.Highlight ? "btn-primary" : "")" href="/premium/buy/@p.PlanId?returnUrl=@Uri.EscapeDataString(ReturnUrl)" rel="nofollow">Jetzt buchen</a>
+                        }
+                    </div>
+                }
+            </div>
+            @if (User.IsGuest)
+            {
+                <p class="small muted" style="margin:0">Noch kein Konto? <a href="/register">Jetzt kostenlos registrieren</a> und danach Premium buchen.</p>
+            }
+            else
+            {
+                <p class="small muted" style="margin:0">Die Zahlung läuft über unseren Zahlungsdienst rstpay. Danach wird dein Zugang automatisch freigeschaltet.</p>
+            }
+        }
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public ForumUser User { get; set; } = default!;
+    [Parameter] public string? Title { get; set; }
+    /// <summary>Wohin nach Anmeldung bzw. Bezahlung zurückgekehrt wird.</summary>
+    [Parameter] public string ReturnUrl { get; set; } = "/premium";
+
+    private List<PremiumService.Plan>? _plans;
+    private MarkupString _text;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _plans = await Premium.PlansAsync(onlyActive: true);
+        _text = Renderer.Render((await Cache.GetAsync()).Settings.PremiumText, await Renderer.ContextAsync(null));
+    }
+}

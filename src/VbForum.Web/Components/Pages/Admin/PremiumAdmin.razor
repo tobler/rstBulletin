@@ -1,0 +1,372 @@
+@page "/admin/premium"
+@attribute [Authorize(Policy = "Admin")]
+@rendermode InteractiveServer
+@inject BoardCache Cache
+@inject PremiumService Premium
+@inject UserRepository Users
+@inject CurrentUser Current
+@inject TokenRepository Audit
+@inject NavigationManager Nav
+
+<PageTitle>Premium – Administration</PageTitle>
+
+<main class="page container">
+    <AdminShell Active="premium" Title="Premium &amp; Abos" Subtitle="Kostenpflichtige Foren, Abo-Modelle und die Schnittstelle zu rstpay">
+        @if (_msg != null) { <div class="alert alert-ok" role="status" style="white-space:pre-line">@_msg</div> }
+        @if (_err != null) { <div class="alert alert-err" role="alert" style="white-space:pre-line">@_err</div> }
+
+        <div class="seg" role="tablist" style="align-self:flex-start">
+            <button type="button" role="tab" class="@(_tab == "plans" ? "on" : "")" @onclick='() => _tab = "plans"'>Abo-Modelle</button>
+            <button type="button" role="tab" class="@(_tab == "subs" ? "on" : "")" @onclick="ShowSubs">Abonnenten (@ForumTime.Number(_counts?.Active ?? 0))</button>
+            <button type="button" role="tab" class="@(_tab == "settings" ? "on" : "")" @onclick='() => _tab = "settings"'>Foren &amp; Schnittstelle</button>
+        </div>
+
+        @if (_snap == null) { <div class="card empty">Lade …</div> }
+        else if (_tab == "plans")
+        {
+            <section class="card">
+                <div class="card-head"><h2>Abo-Modelle</h2><button type="button" class="btn btn-primary btn-sm" @onclick="NewPlan"><Icon Name="plus" Size="16" />Neues Modell</button></div>
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead><tr><th>Modell</th><th>Laufzeit</th><th class="num">Preis</th><th>Gruppe</th><th>Status</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var p in _plans)
+                            {
+                                <tr>
+                                    <td><strong>@p.Title</strong>@if (p.Highlight) { <span class="pill pill-accent" style="margin-left:6px">Empfohlen</span> }<div class="small muted">@p.Description</div></td>
+                                    <td>@p.DurationText</td>
+                                    <td class="num nowrap">@p.PriceText</td>
+                                    <td class="small">@_snap.Groups.GetValueOrDefault(p.GroupId)?.DisplayTitle @(p.PrimaryGroup ? "(Hauptgruppe)" : "")</td>
+                                    <td>@if (p.Active) { <span class="pill pill-accent">Aktiv</span> } else { <span class="pill">Aus</span> }@if (string.IsNullOrWhiteSpace(p.PayUrl)) { <span class="pill pill-danger" style="margin-left:4px">kein Bezahl-Link</span> }</td>
+                                    <td class="nowrap">
+                                        <button type="button" class="btn btn-sm" @onclick="() => EditPlan(p)">Bearbeiten</button>
+                                        <button type="button" class="btn btn-sm btn-ghost btn-danger" title="Löschen" @onclick="() => DeletePlan(p)"><Icon Name="trash" Size="16" /></button>
+                                    </td>
+                                </tr>
+                            }
+                            @if (_plans.Count == 0) { <tr><td colspan="6" class="empty">Noch keine Modelle. Lege z. B. „1 Monat – 19,90 €“ an.</td></tr> }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="list-foot"><span>Die Modelle erscheinen in dieser Reihenfolge auf der Angebotsseite. <a href="/premium" target="_blank">Angebotsseite ansehen</a></span></div>
+            </section>
+        }
+        else if (_tab == "subs")
+        {
+            <section class="card card-pad stack">
+                <h2 class="card-title">Abo manuell vergeben</h2>
+                <div class="form-grid">
+                    <div class="field"><label for="g-user">Benutzername</label><input id="g-user" @bind="_grantUser" /></div>
+                    <div class="field">
+                        <label for="g-plan">Modell</label>
+                        <select id="g-plan" @bind="_grantPlan">
+                            @foreach (var p in _plans) { <option value="@p.PlanId">@p.Title (@p.DurationText)</option> }
+                        </select>
+                    </div>
+                    <div class="field"><label for="g-until">Bis (optional)</label><input id="g-until" type="date" @bind="_grantUntil" /><span class="hint">Leer = Laufzeit des Modells.</span></div>
+                </div>
+                <div class="form-actions"><button type="button" class="btn btn-primary" @onclick="GrantManual" disabled="@(_plans.Count == 0)">Vergeben</button></div>
+            </section>
+
+            <section class="card">
+                <div class="toolbar">
+                    <input class="input" style="flex:1 1 220px" placeholder="Benutzer, E-Mail oder Referenz" @bind="_search" @bind:event="oninput" @onkeyup="SearchKey" aria-label="Abos durchsuchen" />
+                    <select class="input" style="flex:0 0 auto" @bind="_status" @bind:after="() => LoadSubsAsync(1)" aria-label="Status">
+                        <option value="active">Aktiv</option>
+                        <option value="ended">Beendet</option>
+                        <option value="">Alle</option>
+                    </select>
+                    <button type="button" class="btn" @onclick="() => LoadSubsAsync(1)">Suchen</button>
+                    <span class="small muted">Lebenslang: @ForumTime.Number(_counts?.Lifetime ?? 0) · laufen in 7 Tagen ab: @ForumTime.Number(_counts?.EndingIn7Days ?? 0)</span>
+                </div>
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead><tr><th>Benutzer</th><th>Modell</th><th>Von</th><th>Bis</th><th>Status</th><th>Referenz</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var s in _subs?.Items ?? Array.Empty<PremiumService.Subscription>())
+                            {
+                                var active = s.IsActive(ForumTime.Now);
+                                <tr>
+                                    <td><a href="/admin/users/@s.UserId">@HtmlUtil.CleanTitle(s.Username)</a></td>
+                                    <td class="small">@(string.IsNullOrEmpty(s.PlanTitle) ? $"Gruppe {_snap.Groups.GetValueOrDefault(s.GroupId)?.DisplayTitle}" : s.PlanTitle)</td>
+                                    <td class="small nowrap">@ForumTime.Date(s.StartDate)</td>
+                                    <td class="small nowrap">@(s.EndDate == 0 ? "lebenslang" : ForumTime.Date(s.EndDate))</td>
+                                    <td>@if (active) { <span class="pill pill-accent">Aktiv</span> } else { <span class="pill">@StatusText(s)</span> }</td>
+                                    <td class="small"><code>@s.Reference</code> <span class="muted">@s.Source</span></td>
+                                    <td>@if (active) { <button type="button" class="btn btn-sm btn-ghost btn-danger" @onclick="() => Revoke(s)">Beenden</button> }</td>
+                                </tr>
+                            }
+                            @if (_subs?.Items.Count == 0) { <tr><td colspan="7" class="empty">Keine Abos gefunden.</td></tr> }
+                        </tbody>
+                    </table>
+                </div>
+                @if (_subs != null && _subs.PageCount > 1)
+                {
+                    <div class="list-foot">
+                        <button type="button" class="btn btn-sm" disabled="@(_subs.Page <= 1)" @onclick="() => LoadSubsAsync(_subs.Page - 1)">‹ Zurück</button>
+                        <span>Seite @_subs.Page von @_subs.PageCount</span>
+                        <button type="button" class="btn btn-sm" disabled="@(_subs.Page >= _subs.PageCount)" @onclick="() => LoadSubsAsync(_subs.Page + 1)">Weiter ›</button>
+                    </div>
+                }
+                <div class="list-foot">
+                    <span>Abgelaufene Abos beendet das Forum stündlich selbst und entzieht die Gruppe – außer ein anderes aktives Abo vergibt sie noch.</span>
+                    <button type="button" class="btn btn-sm" @onclick="ExpireNow">Jetzt prüfen</button>
+                </div>
+            </section>
+        }
+        else
+        {
+            <section class="card card-pad stack">
+                <h2 class="card-title">Kostenpflichtige Foren</h2>
+                <p class="small muted" style="margin:0">
+                    Wer in einem dieser Foren (und deren Unterforen) Beiträge nicht lesen darf, sieht statt „kein Zugriff“ die Abo-Angebote.
+                    Wer was darf, regeln weiterhin die <a href="/admin/forums">Forenrechte</a>: Gäste/Registrierte z. B. nur „Forum + Titel sehen“, die Premium-Gruppe zusätzlich „Beiträge lesen“.
+                </p>
+                <div class="stack" style="gap:0;max-height:340px;overflow:auto;border:1px solid var(--border-soft);border-radius:10px;padding:6px 10px">
+                    @foreach (var f in _snap.Flatten())
+                    {
+                        <label class="check" style="padding:4px 0 4px @(f.Depth * 20)px">
+                            <input type="checkbox" checked="@_premiumForums.Contains(f.ForumId)" @onchange="e => ToggleForum(f.ForumId, (bool)e.Value!)" />
+                            <span style="font-weight:@(f.IsCategory ? 700 : 500)">@f.DisplayTitle</span>
+                        </label>
+                    }
+                </div>
+                <div class="field">
+                    <label for="p-text">Text über den Angeboten (BBCode)</label>
+                    <textarea id="p-text" rows="3" @bind="_text"></textarea>
+                </div>
+                <div class="form-actions"><button type="button" class="btn btn-primary" @onclick="SaveSettings">Speichern</button></div>
+            </section>
+
+            <section class="card card-pad stack">
+                <h2 class="card-title">Schnittstelle für rstpay</h2>
+                @if (string.IsNullOrEmpty(_snap.Settings.PremiumApiKey))
+                {
+                    <p style="margin:0">Die API ist abgeschaltet. Erzeuge einen Schlüssel, um sie zu aktivieren.</p>
+                }
+                else
+                {
+                    <div class="field">
+                        <label for="p-key">API-Schlüssel</label>
+                        <div class="row">
+                            <input id="p-key" class="input" style="flex:1 1 320px;font-family:var(--mono)" readonly value="@(_showKey ? _snap.Settings.PremiumApiKey : new string('•', 24))" />
+                            <button type="button" class="btn btn-sm" @onclick="() => _showKey = !_showKey">@(_showKey ? "Verbergen" : "Anzeigen")</button>
+                        </div>
+                        <span class="hint">rstpay schickt ihn im Header <code>Authorization: Bearer &lt;Schlüssel&gt;</code> oder <code>X-Api-Key</code>.</span>
+                    </div>
+                }
+                <div class="row">
+                    <button type="button" class="btn" @onclick="NewKey">@(string.IsNullOrEmpty(_snap.Settings.PremiumApiKey) ? "Schlüssel erzeugen" : "Neuen Schlüssel erzeugen")</button>
+                    @if (!string.IsNullOrEmpty(_snap.Settings.PremiumApiKey)) { <button type="button" class="btn btn-ghost btn-danger" @onclick="DisableApi">API abschalten</button> }
+                </div>
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead><tr><th>Aufruf</th><th>Zweck</th></tr></thead>
+                        <tbody>
+                            <tr><td><code>POST @Base/api/premium/grant</code></td><td class="small">Abo freischalten/verlängern. JSON: <code>{"userId":123, "planId":1, "reference":"RST-4711"}</code> – statt <code>userId</code> geht <code>username</code> oder <code>email</code>; optional <code>"until":"2027-01-31"</code>.</td></tr>
+                            <tr><td><code>POST @Base/api/premium/revoke</code></td><td class="small">Abo beenden, Gruppe entziehen. JSON: <code>{"userId":123, "reference":"RST-4711"}</code> oder mit <code>planId</code>/<code>groupId</code>.</td></tr>
+                            <tr><td><code>GET @Base/api/premium/user?userId=123</code></td><td class="small">Gruppen und Abos eines Benutzers.</td></tr>
+                            <tr><td><code>GET @Base/api/premium/plans</code></td><td class="small">Alle Abo-Modelle mit ID, Preis und Laufzeit.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="small muted" style="margin:0">Gleiche <code>reference</code> erneut senden aktualisiert das bestehende Abo (z. B. Verlängerung) statt ein neues anzulegen. Alle Aufrufe stehen im <a href="/admin/log">Protokoll</a>.</p>
+            </section>
+        }
+    </AdminShell>
+</main>
+
+@if (_edit != null)
+{
+    <div class="modal-back" @onclick="() => _edit = null">
+        <div class="modal" role="dialog" aria-modal="true" style="width:min(720px,100%)" @onclick:stopPropagation>
+            <h2 class="card-title">@(_edit.PlanId > 0 ? "Abo-Modell bearbeiten" : "Neues Abo-Modell")</h2>
+            @if (_modalErr != null) { <div class="alert alert-err">@_modalErr</div> }
+            <div class="form-grid">
+                <div class="field"><label for="m-t">Name</label><input id="m-t" @bind="_edit.Title" placeholder="z. B. 3 Monate" /></div>
+                <div class="field"><label for="m-p">Preis (€)</label><input id="m-p" @bind="_price" inputmode="decimal" placeholder="39,90" /></div>
+                <div class="field">
+                    <label for="m-m">Laufzeit</label>
+                    <select id="m-m" @bind="_edit.Months">
+                        <option value="1">1 Monat</option><option value="3">3 Monate</option><option value="6">6 Monate</option><option value="12">12 Monate</option>
+                        <option value="24">24 Monate</option><option value="0">Lebenslang (einmalig)</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="m-g">Vergibt Gruppe</label>
+                    <select id="m-g" @bind="_edit.GroupId">
+                        <option value="0">– bitte wählen –</option>
+                        @foreach (var g in _snap!.Groups.Values.Where(g => !_snap.Settings.AdminGroups.Contains(g.UserGroupId) && !_snap.Settings.SuperModGroups.Contains(g.UserGroupId)).OrderBy(g => g.UserGroupId))
+                        {
+                            <option value="@g.UserGroupId">@g.DisplayTitle (#@g.UserGroupId)</option>
+                        }
+                    </select>
+                </div>
+            </div>
+            <div class="field"><label for="m-d">Beschreibung (optional)</label><input id="m-d" @bind="_edit.Description" maxlength="500" placeholder="z. B. Spare 33 % gegenüber dem Monatsabo" /></div>
+            <div class="field">
+                <label for="m-u">Bezahl-Link bei rstpay</label>
+                <input id="m-u" @bind="_edit.PayUrl" placeholder="https://pay.rst.de/checkout/premium-3m?user={userid}&amp;email={email}" />
+                <span class="hint">Platzhalter: <code>{userid}</code> <code>{username}</code> <code>{email}</code> <code>{planid}</code> <code>{price}</code> <code>{returnurl}</code> – werden beim Klick mit den Daten des Benutzers gefüllt.</span>
+            </div>
+            <div class="form-grid">
+                <div class="field"><label for="m-o">Reihenfolge</label><input id="m-o" type="number" @bind="_edit.DisplayOrder" /></div>
+            </div>
+            <div class="stack" style="gap:0">
+                <label class="toggle-row">Aktiv (wird angeboten)<input type="checkbox" @bind="_edit.Active" /></label>
+                <label class="toggle-row">Als „Empfohlen“ hervorheben<input type="checkbox" @bind="_edit.Highlight" /></label>
+                <label class="toggle-row">Als Hauptgruppe setzen (sonst Zusatzgruppe – empfohlen)<input type="checkbox" @bind="_edit.PrimaryGroup" /></label>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn" @onclick="() => _edit = null">Abbrechen</button>
+                <button type="button" class="btn btn-primary" @onclick="SavePlan">Speichern</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private BoardSnapshot? _snap;
+    private List<PremiumService.Plan> _plans = new();
+    private PremiumService.Counts? _counts;
+    private PagedResult<PremiumService.Subscription>? _subs;
+    private PremiumService.Plan? _edit;
+    private HashSet<int> _premiumForums = new();
+    private string _tab = "plans", _text = "", _price = "", _grantUser = "";
+    private string? _msg, _err, _modalErr, _search, _status = "active";
+    private int _grantPlan;
+    private DateTime? _grantUntil;
+    private bool _showKey;
+
+    private string Base => Nav.BaseUri.TrimEnd('/');
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _snap = await Cache.GetAsync();
+        _plans = await Premium.PlansAsync(onlyActive: false);
+        _counts = await Premium.CountsAsync();
+        _premiumForums = _snap.Settings.PremiumForums.ToHashSet();
+        _text = _snap.Settings.PremiumText;
+        if (_grantPlan == 0 && _plans.Count > 0) _grantPlan = _plans[0].PlanId;
+    }
+
+    private static string StatusText(PremiumService.Subscription s) => s.Status switch { "revoked" => "Beendet", "expired" => "Abgelaufen", _ => "Abgelaufen" };
+
+    private void NewPlan()
+    {
+        _modalErr = null;
+        var premiumGroup = _snap!.Groups.Values.FirstOrDefault(g => g.DisplayTitle.Contains("Premium", StringComparison.OrdinalIgnoreCase))?.UserGroupId ?? 0;
+        _edit = new PremiumService.Plan { Months = 1, GroupId = premiumGroup, DisplayOrder = (_plans.Count + 1) * 10 };
+        _price = "";
+    }
+
+    private void EditPlan(PremiumService.Plan p)
+    {
+        _modalErr = null;
+        _edit = new PremiumService.Plan
+        {
+            PlanId = p.PlanId, Title = p.Title, Description = p.Description, PriceCents = p.PriceCents, Currency = p.Currency, Months = p.Months, GroupId = p.GroupId,
+            PrimaryGroup = p.PrimaryGroup, PayUrl = p.PayUrl, Active = p.Active, DisplayOrder = p.DisplayOrder, Highlight = p.Highlight,
+        };
+        _price = (p.PriceCents / 100m).ToString("0.00", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
+    }
+
+    private async Task SavePlan()
+    {
+        _modalErr = null;
+        var e = _edit!;
+        if (string.IsNullOrWhiteSpace(e.Title)) { _modalErr = "Bitte einen Namen eingeben."; return; }
+        if (!decimal.TryParse(_price.Replace("€", "").Trim().Replace(".", ","), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.GetCultureInfo("de-DE"), out var price) || price < 0)
+        { _modalErr = "Bitte einen gültigen Preis eingeben, z. B. 19,90."; return; }
+        if (e.GroupId <= 0) { _modalErr = "Bitte die Gruppe wählen, die das Abo vergibt."; return; }
+        if (!string.IsNullOrWhiteSpace(e.PayUrl) && !e.PayUrl.Trim().StartsWith("https://", StringComparison.OrdinalIgnoreCase) && !e.PayUrl.Trim().StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+        { _modalErr = "Der Bezahl-Link muss mit https:// beginnen."; return; }
+        e.PriceCents = (int)Math.Round(price * 100);
+        var id = await Premium.SavePlanAsync(e);
+        await Audit.LogAsync(await Current.GetAsync(), e.PlanId > 0 ? "premium.plan.edit" : "premium.plan.create", $"{id} {e.Title} {e.PriceText}", "");
+        _msg = $"„{e.Title}“ gespeichert.";
+        _edit = null;
+        await LoadAsync();
+    }
+
+    private async Task DeletePlan(PremiumService.Plan p)
+    {
+        await Premium.DeletePlanAsync(p.PlanId);
+        await Audit.LogAsync(await Current.GetAsync(), "premium.plan.delete", $"{p.PlanId} {p.Title}", "");
+        _msg = $"„{p.Title}“ gelöscht. Bestehende Abos laufen unverändert weiter.";
+        await LoadAsync();
+    }
+
+    private async Task ShowSubs() { _tab = "subs"; await LoadSubsAsync(1); }
+
+    private async Task LoadSubsAsync(int page)
+    {
+        _subs = await Premium.SearchAsync(_search, _status, page, 50);
+        _counts = await Premium.CountsAsync();
+    }
+
+    private async Task SearchKey(KeyboardEventArgs e) { if (e.Key == "Enter") await LoadSubsAsync(1); }
+
+    private async Task GrantManual()
+    {
+        _msg = _err = null;
+        long? until = _grantUntil is DateTime d ? ForumTime.ToUnix(d.Date.AddDays(1)) - 1 : null;
+        var r = await Premium.GrantAsync(new PremiumService.GrantRequest { Username = _grantUser.Trim(), PlanId = _grantPlan, Until = until, Source = "admin" });
+        if (!r.Ok) { _err = r.Error; return; }
+        await Audit.LogAsync(await Current.GetAsync(), "premium.grant", $"{r.Subscription!.UserId} {r.Subscription.Username} Plan {_grantPlan}", "");
+        _msg = $"{HtmlUtil.CleanTitle(r.Subscription.Username)} hat jetzt Premium {(r.Subscription.EndDate == 0 ? "lebenslang" : "bis " + ForumTime.Date(r.Subscription.EndDate))}.";
+        _grantUser = ""; _grantUntil = null;
+        await LoadSubsAsync(1);
+    }
+
+    private async Task Revoke(PremiumService.Subscription s)
+    {
+        var r = await Premium.RevokeAsync(new PremiumService.RevokeRequest { UserId = s.UserId, GroupId = s.GroupId, Reference = s.Reference, Source = "admin" });
+        await Audit.LogAsync(await Current.GetAsync(), "premium.revoke", $"{s.UserId} {s.Username} Abo {s.SubscriptionId}", "");
+        if (r.Ok) _msg = $"Abo von {HtmlUtil.CleanTitle(s.Username)} beendet."; else _err = r.Error;
+        await LoadSubsAsync(_subs?.Page ?? 1);
+    }
+
+    private async Task ExpireNow()
+    {
+        var n = await Premium.ExpireAsync();
+        _msg = n == 0 ? "Keine abgelaufenen Abos." : $"{n} abgelaufene Abos beendet.";
+        await LoadSubsAsync(1);
+    }
+
+    private void ToggleForum(int id, bool on) { if (on) _premiumForums.Add(id); else _premiumForums.Remove(id); }
+
+    private async Task SaveSettings()
+    {
+        var s = (await Cache.GetAsync()).Settings.Clone();
+        s.PremiumForumIds = string.Join(",", _premiumForums.OrderBy(x => x));
+        s.PremiumText = _text;
+        await Cache.SaveSettingsAsync(s);
+        await Audit.LogAsync(await Current.GetAsync(), "premium.settings", s.PremiumForumIds, "");
+        _msg = "Gespeichert.";
+        await LoadAsync();
+    }
+
+    private async Task NewKey()
+    {
+        var s = (await Cache.GetAsync()).Settings.Clone();
+        s.PremiumApiKey = VbForum.Core.Security.VbPassword.RandomToken(32);
+        await Cache.SaveSettingsAsync(s);
+        await Audit.LogAsync(await Current.GetAsync(), "premium.apikey", "neu erzeugt", "");
+        _showKey = true;
+        _msg = "Neuer Schlüssel erzeugt. Bitte bei rstpay eintragen – der alte gilt ab sofort nicht mehr.";
+        await LoadAsync();
+    }
+
+    private async Task DisableApi()
+    {
+        var s = (await Cache.GetAsync()).Settings.Clone();
+        s.PremiumApiKey = "";
+        await Cache.SaveSettingsAsync(s);
+        await Audit.LogAsync(await Current.GetAsync(), "premium.apikey", "abgeschaltet", "");
+        _msg = "Premium-API abgeschaltet.";
+        await LoadAsync();
+    }
+}

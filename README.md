@@ -104,6 +104,8 @@ shows a maintenance page. The setup does not reopen in that case.
 | `vbf_auditlog` | Log of admin and moderation actions |
 | `vbf_asset` | Logo and favicon, so they survive a redeploy without any volume |
 | `vbf_dpkey` | Encryption keys for login cookies, so users stay logged in across redeploys |
+| `vbf_userpref` | Per-user preferences (e.g. dark mode) |
+| `vbf_plan`, `vbf_subscription` | Premium plans and booked subscriptions |
 
 The only optional structural change to vB tables: under *Admin › Datenbank & Wartung* you can add FULLTEXT indexes on
 `vb_post.pagetext` and `vb_thread.title` for fast search. With several hundred thousand posts this takes a few minutes
@@ -142,6 +144,45 @@ Permissions are computed as in vB:
 Forums a user cannot see are hidden, shown with a lock, or shown with a lock and thread titles. This is set per forum
 under "Für Gruppen ohne Zugriff". *Admin › Rechte prüfen* shows exactly what a guest or a given user may do in each
 forum, and where that permission comes from.
+
+## Premium (paid forums) and payment API
+
+Paid access works through a normal user group such as "Premium":
+
+1. *Admin › Premium & Abos › Abo-Modelle*: create the plans, for example 1 month for 19.90 €, 3 months for 39.90 €,
+   6 months for 59.90 € and lifetime for 99.00 €. For each plan you set the group it grants and the checkout link at the
+   payment provider. The link may contain placeholders: `{userid}`, `{username}`, `{email}`, `{planid}`, `{price}` and
+   `{returnurl}`.
+2. *Foren & Schnittstelle*: tick the paid forums. In these forums (and their sub-forums), users who may not read the
+   posts see the plan offers instead of "no access". Who may read is still controlled by the forum permissions, for
+   example guests and registered users get "view forum + titles" and the premium group also gets "read posts".
+3. Generate an API key and enter it, together with the API URL, at the payment provider.
+
+**API.** All endpoints expect `Authorization: Bearer <key>` (or `X-Api-Key: <key>`) and JSON.
+
+```bash
+# Grant or extend access. The user can be given as userId, username or email.
+curl -X POST https://forum.example.com/api/premium/grant \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"userId": 123, "planId": 2, "reference": "RST-4711"}'
+# optional: "until": "2027-01-31" (or Unix seconds) instead of the plan duration
+
+# End access (removes the group unless another active subscription still grants it)
+curl -X POST https://forum.example.com/api/premium/revoke \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"userId": 123, "reference": "RST-4711"}'
+
+curl -H "Authorization: Bearer $KEY" "https://forum.example.com/api/premium/user?userId=123"
+curl -H "Authorization: Bearer $KEY" https://forum.example.com/api/premium/plans
+```
+
+- **Same `reference` again:** sending the same `reference` again updates that subscription (for example a renewal)
+  instead of creating a new one.
+- **Stacking:** a new subscription for the same group starts when the current one ends.
+- **Expiry:** expired subscriptions are ended hourly by the forum itself, even if the provider does not call `revoke`.
+- **Restrictions:** admin and moderator groups cannot be granted through the API.
+- **Logging:** every call is written to the admin log.
+- **Storage:** subscriptions are kept in `vbf_subscription` and plans in `vbf_plan`.
 
 ## Deployment
 

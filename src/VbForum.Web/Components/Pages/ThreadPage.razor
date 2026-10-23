@@ -133,10 +133,17 @@
 
         @if (_noContent)
         {
+            @if (_premium)
+            {
+                <PremiumOffer User="_user" Title="Dieses Thema ist nur für Premium-Mitglieder" ReturnUrl="@CurrentUrl" />
+            }
+            else
+            {
             <div class="card card-pad stack" style="gap:10px">
                 <p style="margin:0"><Icon Name="lock" /> Du darfst die Beiträge in diesem Forum nicht lesen.</p>
                 @if (_user.IsGuest) { <p style="margin:0"><a class="btn btn-primary" href="/login?returnUrl=@Uri.EscapeDataString(CurrentUrl)">Anmelden</a></p> }
             </div>
+            }
         }
         else if (_posts!.Items.Count == 0)
         {
@@ -274,7 +281,7 @@
     private Dictionary<long, MarkupString> _signatures = new();
     private Dictionary<long, VbForum.Core.BbCode.BbCodeContext> _contexts = new();
     private HashSet<long> _canEdit = new(), _canDelete = new();
-    private bool _isMod, _canReply, _subscribed, _noContent;
+    private bool _isMod, _canReply, _subscribed, _noContent, _premium;
     private int _page = 1;
 
     private bool NewestFirst => OrderQ == "desc";
@@ -313,6 +320,7 @@
         {
             // Titel ja, Inhalt nein (Recht „Themen lesen“ fehlt)
             _noContent = true;
+            _premium = PremiumService.IsPremiumForum(_snap, f);
             _posts = new PagedResult<Post>(Array.Empty<Post>(), 0, 1, 1);
             return;
         }

@@ -43,6 +43,38 @@ public sealed class Schema(Db db)
               PRIMARY KEY (`userid`, `name`)
             ) DEFAULT CHARSET=utf8mb4;
 
+            CREATE TABLE IF NOT EXISTS {Tables.OwnPlan} (
+              `planid` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              `title` VARCHAR(100) NOT NULL,
+              `description` VARCHAR(500) NOT NULL DEFAULT '',
+              `price_cents` INT UNSIGNED NOT NULL DEFAULT 0,
+              `currency` CHAR(3) NOT NULL DEFAULT 'EUR',
+              `months` SMALLINT UNSIGNED NOT NULL DEFAULT 1,
+              `groupid` SMALLINT UNSIGNED NOT NULL,
+              `primarygroup` TINYINT NOT NULL DEFAULT 0,
+              `payurl` VARCHAR(1000) NOT NULL DEFAULT '',
+              `active` TINYINT NOT NULL DEFAULT 1,
+              `displayorder` SMALLINT NOT NULL DEFAULT 0,
+              `highlight` TINYINT NOT NULL DEFAULT 0
+            ) DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS {Tables.OwnSubscription} (
+              `subscriptionid` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              `userid` INT UNSIGNED NOT NULL,
+              `planid` INT UNSIGNED NOT NULL DEFAULT 0,
+              `groupid` SMALLINT UNSIGNED NOT NULL,
+              `startdate` INT UNSIGNED NOT NULL,
+              `enddate` INT UNSIGNED NOT NULL DEFAULT 0,
+              `status` VARCHAR(10) NOT NULL DEFAULT 'active',
+              `reference` VARCHAR(100) NOT NULL DEFAULT '',
+              `source` VARCHAR(20) NOT NULL DEFAULT 'api',
+              `created` INT UNSIGNED NOT NULL,
+              `updated` INT UNSIGNED NOT NULL,
+              KEY `userid` (`userid`),
+              KEY `status_end` (`status`, `enddate`),
+              KEY `reference` (`reference`)
+            ) DEFAULT CHARSET=utf8mb4;
+
             CREATE TABLE IF NOT EXISTS {Tables.OwnAuditLog} (
               `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
               `dateline` INT UNSIGNED NOT NULL,

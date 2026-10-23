@@ -46,6 +46,7 @@ builder.Services.AddSingleton<ModerationService>();
 builder.Services.AddSingleton<UserDeletion>();
 builder.Services.AddSingleton<AssetStore>();
 builder.Services.AddSingleton<AnnouncementRepository>();
+builder.Services.AddSingleton<PremiumService>();
 builder.Services.AddSingleton<SearchService>();
 builder.Services.AddSingleton<ForumAdminService>();
 builder.Services.AddSingleton<AuthService>();
@@ -144,6 +145,7 @@ app.UseMiddleware<ForumGateMiddleware>();
 app.UseAntiforgery();
 
 app.MapForumEndpoints();
+app.MapPremiumApi();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

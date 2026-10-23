@@ -1,0 +1,59 @@
+@page "/premium"
+@inject BoardCache Cache
+@inject CurrentUser Current
+@inject PremiumService Premium
+
+<PageTitle>Premium – @_snap?.Settings.BoardName</PageTitle>
+
+@if (!_loaded) { return; }
+<main class="page container">
+    <div class="page-head"><div><h1>Premium-Mitgliedschaft</h1><p>Voller Zugang zu allen Premium-Bereichen des Forums.</p></div></div>
+
+    @if (Done == "1")
+    {
+        <div class="alert alert-ok" role="status">Danke für deine Buchung! Sobald rstpay die Zahlung bestätigt, wird dein Zugang freigeschaltet – meist innerhalb weniger Sekunden. Lade die Seite bei Bedarf neu.</div>
+    }
+
+    @if (_active.Count > 0)
+    {
+        <section class="card card-pad stack">
+            <h2 class="card-title" style="margin:0"><Icon Name="star" /> Dein Premium-Zugang</h2>
+            @foreach (var s in _active)
+            {
+                <p style="margin:0">@(string.IsNullOrEmpty(s.PlanTitle) ? "Premium" : s.PlanTitle): <strong>@(s.EndDate == 0 ? "lebenslang" : $"gültig bis {ForumTime.Date(s.EndDate)}")</strong></p>
+            }
+            @if (_forum != null) { <p style="margin:0"><a class="btn btn-primary" href="@Links.Forum(_forum)">Weiter zu „@_forum.DisplayTitle“</a></p> }
+        </section>
+    }
+
+    <PremiumOffer User="_user!" Title="@(_active.Count > 0 ? "Verlängern oder upgraden" : "Wähle deinen Zugang")" ReturnUrl="@ReturnUrl" />
+</main>
+
+@code {
+    [SupplyParameterFromQuery(Name = "forum")] public int? ForumId { get; set; }
+    [SupplyParameterFromQuery(Name = "done")] public string? Done { get; set; }
+
+    private bool _loaded;
+    private BoardSnapshot? _snap;
+    private ForumUser? _user;
+    private Forum? _forum;
+    private List<PremiumService.Subscription> _active = new();
+
+    private string ReturnUrl => "/premium" + (_forum != null ? $"?forum={_forum.ForumId}" : "");
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _snap = await Cache.GetAsync();
+            _user = await Current.GetAsync();
+            if (ForumId is int f) _forum = _snap.Forum(f);
+            if (!_user.IsGuest)
+            {
+                var now = ForumTime.Now;
+                _active = (await Premium.UserSubscriptionsAsync(_user.UserId)).Where(s => s.IsActive(now)).ToList();
+            }
+        }
+        finally { _loaded = true; }
+    }
+}
