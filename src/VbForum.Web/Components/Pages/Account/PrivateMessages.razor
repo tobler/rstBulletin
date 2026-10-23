@@ -207,7 +207,7 @@
         {
             var url = await Mail.AbsoluteUrlAsync("/account/pm");
             foreach (var r in recipients)
-                if (await Users.GetAsync(r.UserId) is { } ru)
+                if (await Users.GetAsync(r.UserId) is { } ru && (ru.Options & UserRepository.OptionEmailOnPm) != 0)
                     _ = Mail.SendAsync(ru.Email, $"Neue private Nachricht von {_user.Username}", new MailContent(
                         $"Hallo {ru.DisplayName},",
                         new[] { $"{_user.Username} hat dir eine private Nachricht geschickt: „{c.Title}“" },

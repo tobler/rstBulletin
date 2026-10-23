@@ -130,6 +130,17 @@ public sealed class UserRepository(Db db)
         await c.ExecuteAsync($"UPDATE {T.User} SET email = @email WHERE userid = @userId", new { userId, email = email.Trim() });
     }
 
+    /// <summary>vB-Benutzeroption „emailonpm“ (Bit 4096 in vb_user.options): E-Mail bei neuer privater Nachricht.</summary>
+    public const long OptionEmailOnPm = 4096;
+
+    public async Task SetOptionAsync(long userId, long bit, bool on)
+    {
+        await using var c = await db.OpenAsync();
+        await c.ExecuteAsync(on
+            ? $"UPDATE {T.User} SET options = options | @bit WHERE userid = @userId"
+            : $"UPDATE {T.User} SET options = options & ~@bit WHERE userid = @userId", new { userId, bit });
+    }
+
     /// <summary>vB-Feld pmpopup: 0 = aus, sonst an.</summary>
     public async Task SetPmPopupAsync(long userId, bool on)
     {
