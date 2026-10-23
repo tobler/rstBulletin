@@ -18,7 +18,8 @@ public sealed class RstPayService(Db db, BoardCache cache, PremiumService premiu
     // ---------- Session anfordern ----------
 
     /// <param name="Detail">Technische Ursache (nur für Admins angezeigt).</param>
-    public sealed record SessionResult(string? Url, string? Error, string? Detail = null);
+    /// <param name="RequestUrl">Aufgerufene Adresse bei rstpay (für den Test im Admin-Bereich).</param>
+    public sealed record SessionResult(string? Url, string? Error, string? Detail = null, string? RequestUrl = null);
 
     public async Task<SessionResult> CreatePaymentUrlAsync(PremiumService.Plan plan, ForumUser u)
     {
@@ -36,11 +37,23 @@ public sealed class RstPayService(Db db, BoardCache cache, PremiumService premiu
                   $"&rebilling={(plan.RstRebilling ? 1 : 0)}&currency={E(plan.Currency)}" +
                   $"&param1={u.UserId}&param2={E(u.Username)}";
         var safeUrl = url.Replace(E(s.RstPayMerchantKey), "***");
+        var result = await RequestAsync(url, safeUrl, baseUrl);
+        // Jede Anfrage protokollieren (Reiter „Zahlungen“), damit Antworten und Fehler sichtbar sind
+        await LogAsync("session", result.Url != null ? result.Url[(result.Url.LastIndexOf('/') + 1)..] : "", u.UserId, plan.Title,
+            plan.PriceCents.ToString(CultureInfo.InvariantCulture), "", "", "",
+            result.Url != null ? "Session erhalten → Weiterleitung zu rstpay" : $"Fehler: {result.Detail ?? result.Error}");
+        return result with { RequestUrl = url };
+    }
+
+    private async Task<SessionResult> RequestAsync(string url, string safeUrl, string baseUrl)
+    {
         try
         {
             using var resp = await Http.GetAsync(url);
             var body = (await resp.Content.ReadAsStringAsync()).Trim();
-            var shortBody = body.Length > 300 ? body[..300] : body;
+            // HTML-Fehlerseiten lesbar machen (Tags raus, Leerraum zusammenfassen)
+            var plain = body.Contains('<') ? System.Text.RegularExpressions.Regex.Replace(System.Text.RegularExpressions.Regex.Replace(body, "<[^>]+>", " "), @"\s+", " ").Trim() : body;
+            var shortBody = plain.Length > 300 ? plain[..300] : plain;
             if (!resp.IsSuccessStatusCode)
             {
                 log.LogWarning("rstpay: requestsession HTTP {Status}: {Body} ({Url})", (int)resp.StatusCode, shortBody, safeUrl);

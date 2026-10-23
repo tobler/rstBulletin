@@ -41,6 +41,7 @@
                                     <td class="small">@_snap.Groups.GetValueOrDefault(p.GroupId)?.DisplayTitle @(p.PrimaryGroup ? "(Hauptgruppe)" : "")</td>
                                     <td>@if (p.Active) { <span class="pill pill-accent">Aktiv</span> } else { <span class="pill">Aus</span> }@if (p.PayMode == "rstpay") { <span class="pill" style="margin-left:4px">rstpay · @(p.RstDays >= 999999 || (p.IsLifetime && p.RstDays <= 0) ? "lebenslang" : $"{p.RstDays} Tage")</span> } else if (string.IsNullOrWhiteSpace(p.PayUrl)) { <span class="pill pill-danger" style="margin-left:4px">kein Bezahl-Link</span> }</td>
                                     <td class="nowrap">
+                                        @if (p.PayMode == "rstpay") { <button type="button" class="btn btn-sm btn-ghost" title="Bezahl-Link testen" @onclick="() => TestPlan(p)">Testen</button> }
                                         <button type="button" class="btn btn-sm" @onclick="() => EditPlan(p)">Bearbeiten</button>
                                         <button type="button" class="btn btn-sm btn-ghost btn-danger" title="Löschen" @onclick="() => DeletePlan(p)"><Icon Name="trash" Size="16" /></button>
                                     </td>
@@ -50,6 +51,24 @@
                         </tbody>
                     </table>
                 </div>
+                @if (_test != null)
+                {
+                    <div class="card-pad stack" style="gap:8px;border-top:1px solid var(--border-soft)">
+                        <strong>Test „@_testPlan“ – so ruft das Forum rstpay auf (mit deinem Konto als Käufer):</strong>
+                        <div class="row" style="gap:8px">
+                            <code style="flex:1 1 400px;word-break:break-all;font-size:12px;background:var(--quote-bg);padding:8px 10px;border-radius:8px">@(_showFull ? _test.RequestUrl : MaskKey(_test.RequestUrl))</code>
+                            <button type="button" class="btn btn-sm" @onclick="() => _showFull = !_showFull">@(_showFull ? "Schlüssel verbergen" : "Schlüssel zeigen")</button>
+                        </div>
+                        @if (_test.Url != null)
+                        {
+                            <div class="alert alert-ok" style="margin:0">rstpay hat eine Session geliefert. Bezahlseite: <a href="@_test.Url" target="_blank" rel="noopener">@_test.Url</a></div>
+                        }
+                        else
+                        {
+                            <div class="alert alert-err" style="margin:0">@_test.Error @if (_test.Detail != null) { <br /><span class="small">@_test.Detail</span> }</div>
+                        }
+                    </div>
+                }
                 <div class="list-foot"><span>Die Modelle erscheinen in dieser Reihenfolge auf der Angebotsseite. <a href="/premium" target="_blank">Angebotsseite ansehen</a></span></div>
             </section>
         }
@@ -119,7 +138,7 @@
         else if (_tab == "payments")
         {
             <section class="card">
-                <div class="card-head"><h2>Rückmeldungen von rstpay</h2><span class="small muted">die letzten 200</span></div>
+                <div class="card-head"><h2>Protokoll rstpay</h2><span class="small muted">die letzten 200 · <code>session</code> = Anfrage beim Klick auf „Jetzt buchen“, alle anderen = Rückmeldungen von rstpay</span></div>
                 <div class="table-wrap">
                     <table class="table">
                         <thead><tr><th>Zeit</th><th>Aktion</th><th>Benutzer</th><th class="num">Betrag</th><th>Zahler</th><th>Transaktion</th><th>Ergebnis</th><th class="hide-mobile">IP</th></tr></thead>
@@ -128,12 +147,12 @@
                             {
                                 <tr>
                                     <td class="small nowrap">@ForumTime.Full(r.Dateline)</td>
-                                    <td><code>@r.Action</code></td>
+                                    <td><code>@r.Action</code>@if (r.Action == "session") { <div class="small muted">ausgehend</div> }</td>
                                     <td class="small">@if (r.UserId > 0) { <a href="/admin/users/@r.UserId">@HtmlUtil.CleanTitle(r.Username)</a> } else { <span class="muted">@r.Param1</span> }</td>
                                     <td class="num small">@r.Amount</td>
                                     <td class="small">@r.Payer @r.Country</td>
                                     <td class="small"><code>@r.TransactionId</code></td>
-                                    <td class="small">@r.Result</td>
+                                    <td class="small" style="max-width:420px;word-break:break-word;@(r.Result.StartsWith("Fehler") || r.Result.StartsWith("NOK") ? "color:var(--danger)" : "")">@r.Result</td>
                                     <td class="small hide-mobile">@r.Ip</td>
                                 </tr>
                             }
@@ -393,6 +412,24 @@
 
     /// <summary>rstpay-Tage passend zur Laufzeit vorschlagen.</summary>
     private void MonthsChanged() => _edit!.RstDays = _edit.Months switch { 0 => 999999, 1 => 30, 3 => 90, 6 => 180, 12 => 365, 24 => 730, var m => m * 30 };
+
+    private RstPayService.SessionResult? _test;
+    private string _testPlan = "";
+    private bool _showFull;
+
+    private async Task TestPlan(PremiumService.Plan p)
+    {
+        _showFull = false;
+        _testPlan = p.Title;
+        _test = await RstPay.CreatePaymentUrlAsync(p, await Current.GetAsync());
+        await Audit.LogAsync(await Current.GetAsync(), "premium.rstpay.test", $"Plan {p.PlanId} {p.Title}: {(_test.Url != null ? "OK" : _test.Detail ?? _test.Error)}", "");
+    }
+
+    private string? MaskKey(string? url)
+    {
+        var key = _snap?.Settings.RstPayMerchantKey;
+        return url == null || string.IsNullOrEmpty(key) ? url : url.Replace(Uri.EscapeDataString(key), "***");
+    }
 
     private async Task ShowPayments() { _tab = "payments"; _payments = await RstPay.RecentAsync(); }
 
