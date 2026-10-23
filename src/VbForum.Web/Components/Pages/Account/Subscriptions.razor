@@ -31,7 +31,7 @@
             <input type="hidden" name="Settings.Posted" value="true" />
             <label class="toggle-row">Popup anzeigen, wenn eine neue private Nachricht eintrifft <InputCheckbox @bind-Value="Settings!.PmPopup" /></label>
             <label class="toggle-row">Eigene Themen und Antworten automatisch abonnieren <InputCheckbox @bind-Value="Settings!.AutoSubscribe" /></label>
-            <label class="toggle-row">Bei neuen Antworten in abonnierten Themen eine E-Mail schicken <InputCheckbox @bind-Value="Settings.Email" /></label>
+            <label class="toggle-row"><span>E-Mail bei neuen Antworten in abonnierten Themen<br /><span class="small muted">Gilt für alle bestehenden und künftigen Abos. Abschalten stoppt auch E-Mails zu neuen Themen aus abonnierten Foren.</span></span> <InputCheckbox @bind-Value="Settings.Email" /></label>
             @if (!_smtp) { <p class="small muted" style="margin:6px 0 0">Hinweis: Der E-Mail-Versand ist im Forum derzeit nicht eingerichtet.</p> }
             <div class="form-actions" style="margin-top:12px"><button type="submit" class="btn btn-primary">Speichern</button></div>
         </EditForm>
@@ -46,11 +46,17 @@
                             <div class="thread-title-line">
                                 @if (s.HasNew) { <span class="dot" title="Neue Beiträge"></span> }
                                 <a href="/thread/@s.ThreadId/unread" class="thread-title @(s.HasNew ? "unread" : "")">@s.DisplayTitle</a>
-                                @if (s.EmailUpdate > 0) { <span class="pill">E-Mail</span> }
+                                @if (s.EmailUpdate > 0) { <span class="pill" title="Bei neuen Antworten kommt eine E-Mail">E-Mail</span> }
                             </div>
                             <span class="thread-sub">Letzte Antwort von @HtmlUtil.CleanTitle(s.LastPoster) · @ForumTime.Relative(s.LastPost)</span>
                         </div>
                     </div>
+                    <form method="post" action="/thread/@s.ThreadId/subscribe" class="inline">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="mode" value="@(s.EmailUpdate > 0 ? "silent" : "email")" />
+                        <input type="hidden" name="returnUrl" value="/account/subscriptions" />
+                        <button type="submit" class="btn btn-sm btn-ghost">@(s.EmailUpdate > 0 ? "Ohne E-Mail" : "Mit E-Mail")</button>
+                    </form>
                     <form method="post" action="/thread/@s.ThreadId/subscribe" class="inline">
                         <AntiforgeryToken />
                         <input type="hidden" name="mode" value="off" />
@@ -84,7 +90,10 @@
             if (Settings == null)
             {
                 var row = await Users.GetAsync(_user.UserId);
-                Settings = new NotifyInput { AutoSubscribe = row!.AutoSubscribe >= 0, Email = row.AutoSubscribe >= 1, PmPopup = row.PmPopup != 0 };
+                var subs = await Subs.ListAsync(_user.UserId);
+                // Häkchen zeigt den tatsächlichen Stand: bekommt der Benutzer für irgendein Abo noch Mails?
+                var email = subs.Count > 0 ? subs.Any(x => x.EmailUpdate > 0) : row!.AutoSubscribe >= 1;
+                Settings = new NotifyInput { AutoSubscribe = row!.AutoSubscribe >= 0, Email = email, PmPopup = row.PmPopup != 0 };
             }
             _subs = await Subs.ListAsync(_user.UserId);
             _theme = VbForum.Web.Infrastructure.Theme.Normalize(await Users.GetPrefAsync(_user.UserId, VbForum.Web.Infrastructure.Theme.Pref));
@@ -96,6 +105,9 @@
     {
         // vB: -1 = kein Abo, 0 = Abo ohne Mail, 1 = sofortige Mail
         await Users.SetAutoSubscribeAsync(_user!.UserId, !Settings!.AutoSubscribe ? -1 : Settings.Email ? 1 : 0);
+        // E-Mail-Einstellung auf alle bestehenden Abos übertragen (vorher galt sie nur für neue)
+        await Subs.SetAllEmailAsync(_user.UserId, Settings.Email);
+        _subs = await Subs.ListAsync(_user.UserId);
         await Users.SetPmPopupAsync(_user.UserId, Settings.PmPopup);
         _message = "Einstellungen gespeichert.";
     }

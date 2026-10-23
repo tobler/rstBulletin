@@ -95,6 +95,7 @@ public sealed class Tables(string p)
     public string PmText => N("pmtext");
     public string PmReceipt => N("pmreceipt");
     public string SubscribeThread => N("subscribethread");
+    public string SubscribeForum => N("subscribeforum");
     public string ThreadRead => N("threadread");
     public string ForumRead => N("forumread");
     public string DeletionLog => N("deletionlog");

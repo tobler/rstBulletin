@@ -234,6 +234,19 @@ public sealed class SubscriptionRepository(Db db)
             """, new { userId, threadId, e = email ? 1 : 0 });
     }
 
+    /// <summary>
+    /// E-Mail für alle Abos des Benutzers an- oder abschalten. Beim Abschalten auch die Foren-Abos aus vBulletin
+    /// (vb_subscribeforum), damit ein parallel laufendes vB keine Mails zu neuen Themen mehr schickt.
+    /// </summary>
+    public async Task SetAllEmailAsync(long userId, bool email)
+    {
+        await using var c = await db.OpenAsync();
+        await c.ExecuteAsync($"UPDATE {T.SubscribeThread} SET emailupdate = @e WHERE userid = @userId", new { userId, e = email ? 1 : 0 });
+        if (!email)
+            try { await c.ExecuteAsync($"UPDATE {T.SubscribeForum} SET emailupdate = 0 WHERE userid = @userId", new { userId }); }
+            catch { /* Tabelle gibt es nicht in jeder Installation */ }
+    }
+
     public async Task UnsubscribeAsync(long userId, long threadId)
     {
         await using var c = await db.OpenAsync();
