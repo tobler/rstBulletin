@@ -161,7 +161,7 @@ Paid access works through a normal user group such as "Premium":
 **rstpay.** Under *Foren & Schnittstelle* you enter the rstpay project ID, merchant ID and merchant key. These are
 stored in the database, never in the code. For plans with the payment mode "rstpay", "Buy now" works like this:
 
-1. The forum requests a session server-side (`/api/requestsession` with `amount`, `duration`, `paymenttype`,
+1. The forum requests a session server-side (`/api/requestsession` with `amount` in cents, `duration` in days (lifetime 999999), `paymenttype`,
    `rebilling`, `param1` = user ID, `param2` = user name).
 2. It redirects the user to `/payment/{session}`.
 

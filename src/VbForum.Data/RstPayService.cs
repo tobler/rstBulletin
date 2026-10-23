@@ -25,10 +25,12 @@ public sealed class RstPayService(Db db, BoardCache cache, PremiumService premiu
         if (!s.RstPayConfigured) return new(null, "rstpay ist noch nicht eingerichtet.");
         var baseUrl = s.RstPayBaseUrl.TrimEnd('/');
         static string E(string v) => Uri.EscapeDataString(v);
-        var amount = (plan.PriceCents / 100m).ToString("0.00", CultureInfo.InvariantCulture);
+        // rstpay erwartet den Betrag in Cent; Lifetime = duration 999999
+        var amount = plan.PriceCents.ToString(CultureInfo.InvariantCulture);
+        var duration = plan.IsLifetime && plan.RstDays <= 0 ? 999999 : plan.RstDays;
         var url = $"{baseUrl}/api/requestsession" +
                   $"?projectid={E(s.RstPayProjectId)}&merchantid={E(s.RstPayMerchantId)}&merchantkey={E(s.RstPayMerchantKey)}" +
-                  $"&amount={amount}&duration={plan.RstDays}&paymenttype={plan.RstPaymentType}" +
+                  $"&amount={amount}&duration={duration}&paymenttype={plan.RstPaymentType}" +
                   $"&description={E($"{plan.Title} - Username: {u.Username}")}" +
                   $"&rebilling={(plan.RstRebilling ? 1 : 0)}&currency={E(plan.Currency)}" +
                   $"&param1={u.UserId}&param2={E(u.Username)}";
