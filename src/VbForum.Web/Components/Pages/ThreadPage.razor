@@ -9,6 +9,8 @@
 @inject PostRenderer Renderer
 @inject ViewCounter Views
 @inject NavigationManager Nav
+@inject PollService Polls
+@inject ReputationService Rep
 
 <PageTitle>@(_thread?.DisplayTitle ?? "Thema") – @_snap?.Settings.BoardName</PageTitle>
 
@@ -53,6 +55,10 @@
                         <input type="hidden" name="returnUrl" value="@CurrentUrl" />
                         <button type="submit" class="btn"><Icon Name="bell" />@(_subscribed ? "Abo beenden" : "Abonnieren")</button>
                     </form>
+                }
+                @if (_canAddPoll)
+                {
+                    <a href="/thread/@_thread.ThreadId/poll" class="btn"><Icon Name="bar" />Umfrage hinzufügen</a>
                 }
                 @if (_canReply)
                 {
@@ -108,6 +114,13 @@
                     <ModButton ThreadId="_thread.ThreadId" Action="harddelete" Label="Endgültig löschen" Danger="true" Confirm="Thema mit allen Beiträgen und Anhängen ENDGÜLTIG löschen? Das kann nicht rückgängig gemacht werden." Return="@CurrentUrl" />
                 }
             </div>
+        }
+
+        @if (_poll != null)
+        {
+            <PollBox Poll="_poll" ThreadId="_thread.ThreadId" MyVotes="_myVotes" Voters="_pollVoters" CannotVote="@_cannotVote" CanManage="_isMod"
+                     ShowResults="@(PollResultsQ == 1)" ReturnUrl="@Links.Thread(_thread)"
+                     ResultsUrl="@Links.WithQuery(Links.Thread(_thread), new Dictionary<string, object?> { ["pollresults"] = 1 })" VoteUrl="@Links.Thread(_thread)" />
         }
 
         @if (!_noContent)
@@ -167,6 +180,14 @@
                             <span class="rank">@Rank(a)</span>
                             <span>Dabei seit @ForumTime.Local(a.JoinDate).Year</span>
                             <span>@ForumTime.Number(a.Posts) @(a.Posts == 1 ? "Beitrag" : "Beiträge")</span>
+                            @if (_repOn)
+                            {
+                                var (pips, sign) = ReputationService.Pips(a.Reputation);
+                                var lvl = ReputationService.LevelFor(_levels, a.Reputation);
+                                <span class="rep-pips @(sign > 0 ? "pos" : sign < 0 ? "neg" : "neutral")" title="@($"{a.DisplayName} {lvl.Title}{(_user.IsAdmin ? $" ({a.Reputation})" : "")}")" aria-label="@($"Reputation: {a.DisplayName} {lvl.Title}")">
+                                    @for (var i = 0; i < pips; i++) { <i class="@(i >= 5 ? "hi" : "")"></i> }
+                                </span>
+                            }
                         }
                         else
                         {
@@ -209,6 +230,10 @@
                     {
                         <div class="signature">@sig</div>
                     }
+                    @if (_repMessage != null && RepPostQ == p.PostId)
+                    {
+                        <div class="alert @(RepQ == "ok" ? "alert-ok" : "alert-err")" role="status" style="margin-top:10px">@_repMessage</div>
+                    }
                     <div class="post-actions">
                         @if (_canDelete.Contains(p.PostId) && p.Visible != 2)
                         {
@@ -229,6 +254,32 @@
                         @if (_canReply && p.Visible == 1)
                         {
                             <a href="/thread/@_thread.ThreadId/reply?quote=@p.PostId" class="btn btn-sm">Zitieren</a>
+                        }
+                        @if (_canRate && !own && p.UserId > 0 && p.Visible == 1)
+                        {
+                            @if (_rated.Contains(p.PostId))
+                            {
+                                <span class="btn btn-sm btn-ghost" aria-disabled="true" title="Du hast diesen Beitrag bewertet"><Icon Name="check" Size="14" />Bewertet</span>
+                            }
+                            else
+                            {
+                                <details class="menu rep-menu">
+                                    <summary class="btn btn-sm" title="Beitrag bewerten (Reputation)"><Icon Name="thumb" Size="14" />Bewerten</summary>
+                                    <form method="post" action="/post/@p.PostId/reputation" class="menu-pop stack" style="gap:8px">
+                                        <AntiforgeryToken />
+                                        <input type="hidden" name="returnUrl" value="@CurrentUrl" />
+                                        <span class="small" style="font-weight:600">@(a?.DisplayName ?? HtmlUtil.CleanTitle(p.Username)) für diesen Beitrag bewerten</span>
+                                        <label class="row small" style="gap:6px"><input type="radio" name="value" value="pos" checked /> Positiv – hilfreich</label>
+                                        @if (_snap.Settings.ReputationAllowNegative || _user.IsAdmin)
+                                        {
+                                            <label class="row small" style="gap:6px"><input type="radio" name="value" value="neg" /> Negativ</label>
+                                        }
+                                        <label class="small" for="rr@(p.PostId)">Kommentar (optional)</label>
+                                        <input id="rr@(p.PostId)" class="input" name="reason" maxlength="250" />
+                                        <button type="submit" class="btn btn-sm btn-primary">Bewertung abgeben</button>
+                                    </form>
+                                </details>
+                            }
                         }
                     </div>
                 </div>
@@ -270,6 +321,9 @@
     [SupplyParameterFromQuery(Name = "page")] public int? PageQ { get; set; }
     [SupplyParameterFromQuery(Name = "order")] public string? OrderQ { get; set; }
     [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
+    [SupplyParameterFromQuery(Name = "pollresults")] public int? PollResultsQ { get; set; }
+    [SupplyParameterFromQuery(Name = "rep")] public string? RepQ { get; set; }
+    [SupplyParameterFromQuery(Name = "reppost")] public long? RepPostQ { get; set; }
 
     private BoardSnapshot? _snap;
     private ForumUser? _user;
@@ -281,7 +335,13 @@
     private Dictionary<long, MarkupString> _signatures = new();
     private Dictionary<long, VbForum.Core.BbCode.BbCodeContext> _contexts = new();
     private HashSet<long> _canEdit = new(), _canDelete = new();
-    private bool _isMod, _canReply, _subscribed, _noContent, _premium;
+    private bool _isMod, _canReply, _subscribed, _noContent, _premium, _canAddPoll, _repOn, _canRate;
+    private PollService.Poll? _poll;
+    private HashSet<int> _myVotes = new();
+    private Dictionary<int, List<(long UserId, string Name)>> _pollVoters = new();
+    private string? _cannotVote, _repMessage;
+    private List<ReputationService.Level> _levels = new();
+    private HashSet<long> _rated = new();
     private int _page = 1;
 
     private bool NewestFirst => OrderQ == "desc";
@@ -327,6 +387,23 @@
         _isMod = perms.IsModerator(_user, f);
         _canReply = perms.CanReply(_user, f, t);
 
+        // Umfrage
+        if (t.PollId > 0 && await Polls.GetAsync(t.PollId) is { } poll)
+        {
+            _poll = poll;
+            _myVotes = await Polls.MyVotesAsync(poll.PollId, _user.UserId);
+            _cannotVote = Polls.CannotVote(_user, f, t, poll, perms);
+            if (poll.IsPublic) _pollVoters = await Polls.VotersAsync(poll.PollId);
+        }
+        else
+            _canAddPoll = !_user.IsGuest && (_isMod || (t.PostUserId == _user.UserId && t.IsOpen)) && perms.CanPostPoll(_user, f);
+
+        // Reputation
+        _repOn = _snap.Settings.ReputationEnabled;
+        _canRate = ReputationService.MayUse(_user, _snap);
+        if (_repOn) _levels = await Rep.LevelsAsync();
+        _repMessage = ReputationService.Message(RepQ, _snap.Settings);
+
         _page = Math.Max(1, PageQ ?? 1);
         _posts = await Posts.ListByThreadAsync(t.ThreadId, _page, _snap.Settings.PostsPerPage, NewestFirst, _isMod, _isMod, _user.UserId, Q);
         if (_page > _posts.PageCount && _posts.Total > 0)
@@ -347,6 +424,7 @@
         if (!canAtt) _attachments.Clear();
         foreach (var a in _authors.Values)
             _signatures[a.UserId] = await Renderer.RenderSignatureAsync(a.Signature);
+        if (_canRate) _rated = await Rep.RatedAsync(_user.UserId, ids);
 
         _subscribed = await Subs.IsSubscribedAsync(_user.UserId, t.ThreadId);
         Views.Add(t.ThreadId);

@@ -7,6 +7,7 @@
                 @if (t.IsSticky) { <span class="pill pill-warn">Angepinnt</span> }
                 @if (!t.IsOpen && !t.IsRedirect) { <span class="pill">Geschlossen</span> }
                 @if (t.IsRedirect) { <span class="pill">Verschoben</span> }
+                @if (t.PollId > 0 && !t.IsRedirect) { <span class="pill" title="Thema mit Umfrage"><Icon Name="bar" Size="12" /> Umfrage</span> }
                 @if (t.IsModerated) { <span class="pill pill-accent">Wartet auf Freigabe</span> }
                 @if (t.IsDeleted) { <span class="pill pill-danger">Gelöscht</span> }
                 @if (t.IsUnread) { <a href="/thread/@t.ThreadId/unread" title="Zum ersten ungelesenen Beitrag" class="dot" aria-label="Ungelesen – zum ersten neuen Beitrag"></a> }

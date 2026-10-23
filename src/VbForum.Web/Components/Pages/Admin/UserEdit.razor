@@ -26,7 +26,7 @@
             <section class="card card-pad stack">
                 <div class="row" style="justify-content:space-between">
                     <h2 class="card-title" style="margin:0">Konto</h2>
-                    <a class="btn btn-sm" href="@Links.User(_u.UserId, _u.DisplayName)" target="_blank">Profil ansehen</a>
+<span class="row" style="gap:6px"><a class="btn btn-sm" href="/account/reputation?user=@_u.UserId">Reputation</a><a class="btn btn-sm" href="@Links.User(_u.UserId, _u.DisplayName)" target="_blank">Profil ansehen</a></span>
                 </div>
                 <div class="form-grid">
                     <div class="field"><label for="ue-n">Benutzername</label><input id="ue-n" @bind="_name" maxlength="100" /><span class="hint">Umbenennen ändert auch den Namen an allen Beiträgen.</span></div>

@@ -76,7 +76,7 @@ public sealed class PostRepository(Db db)
         return (await c.QueryAsync<PostAuthor>(
             $"""
             SELECT u.userid, u.username, u.usergroupid, u.displaygroupid, u.usertitle, u.joindate, u.posts,
-                   u.avatarrevision, u.lastactivity, ut.signature,
+                   u.avatarrevision, u.lastactivity, ut.signature, u.reputation,
                    (SELECT COUNT(*) FROM {T.CustomAvatar} ca WHERE ca.userid = u.userid AND ca.visible = 1) AS hascustomavatar
             FROM {T.User} u LEFT JOIN {T.UserTextField} ut ON ut.userid = u.userid
             WHERE u.userid IN @ids

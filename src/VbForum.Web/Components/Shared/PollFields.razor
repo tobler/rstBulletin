@@ -1,0 +1,49 @@
+@* Eingabefelder für eine Umfrage (Frage, Antworten, Optionen). Nur in interaktiven Komponenten verwenden. *@
+<div class="stack poll-fields" style="gap:12px">
+    <div class="field">
+        <label for="@($"{_id}-q")">Frage</label>
+        <input id="@($"{_id}-q")" class="input" @bind="Draft.Question" @bind:event="oninput" maxlength="@PollService.MaxQuestion" placeholder="Was möchtest du wissen?" />
+    </div>
+    <div class="stack" style="gap:6px">
+        <span class="small" style="font-weight:600">Antwortmöglichkeiten</span>
+        @for (var i = 0; i < Draft.Options.Count; i++)
+        {
+            var idx = i;
+            <div class="row" style="gap:6px;flex-wrap:nowrap">
+                <label class="sr-only" for="@($"{_id}-o{idx}")">Antwort @(idx + 1)</label>
+                <input id="@($"{_id}-o{idx}")" class="input" style="flex:1" value="@Draft.Options[idx]" maxlength="@PollService.MaxOption"
+                       @oninput="e => SetOption(idx, e.Value)" placeholder="Antwort @(idx + 1)" />
+                @if (idx >= ExistingOptions && Draft.Options.Count > 2)
+                {
+                    <button type="button" class="btn btn-ghost btn-sm" aria-label="Antwort @(idx + 1) entfernen" @onclick="() => Draft.Options.RemoveAt(idx)"><Icon Name="x" Size="14" /></button>
+                }
+            </div>
+        }
+        @if (Draft.Options.Count < PollService.MaxOptions)
+        {
+            <div><button type="button" class="btn btn-sm" @onclick='() => Draft.Options.Add("")'>+ Antwort hinzufügen</button></div>
+        }
+    </div>
+    <div class="form-grid">
+        <div class="field">
+            <label for="@($"{_id}-t")">Laufzeit (Tage)</label>
+            <input id="@($"{_id}-t")" type="number" min="0" max="3650" @bind="Draft.TimeoutDays" />
+            <span class="hint">0 = unbegrenzt</span>
+        </div>
+    </div>
+    <label class="toggle-row">Mehrfachauswahl erlauben<input type="checkbox" @bind="Draft.Multiple" /></label>
+    <label class="toggle-row">Öffentlich (jeder sieht, wer was gewählt hat)<input type="checkbox" @bind="Draft.Public" /></label>
+    @if (ShowActive)
+    {
+        <label class="toggle-row">Umfrage offen (Abstimmen möglich)<input type="checkbox" @bind="Draft.Active" /></label>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PollService.Draft Draft { get; set; } = default!;
+    /// <summary>Beim Bearbeiten: so viele Antworten gibt es schon (können nicht entfernt werden).</summary>
+    [Parameter] public int ExistingOptions { get; set; }
+    [Parameter] public bool ShowActive { get; set; }
+    private void SetOption(int i, object? v) { if (i < Draft.Options.Count) Draft.Options[i] = v?.ToString() ?? ""; }
+    private readonly string _id = "pl" + Guid.NewGuid().ToString("N")[..6];
+}

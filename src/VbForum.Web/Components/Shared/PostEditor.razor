@@ -9,6 +9,7 @@
 @inject PostRenderer Renderer
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject PollService Polls
 
 <div class="stack" style="gap:12px">
     @if (_error != null) { <div class="alert alert-err" role="alert">@_error</div> }
@@ -85,6 +86,15 @@
         </div>
     }
 
+    @if (_canPoll)
+    {
+        <label class="toggle-row">Umfrage hinzufügen<input type="checkbox" @bind="_withPoll" /></label>
+        @if (_withPoll)
+        {
+            <PollFields Draft="_poll" />
+        }
+    }
+
     @if (EditPostId > 0)
     {
         <div class="field">
@@ -130,7 +140,8 @@
     private readonly string _id = "ed" + Guid.NewGuid().ToString("N")[..6];
     private string _title = "", _text = "", _reason = "";
     private string? _error;
-    private bool _busy, _preview, _canAttach, _isFirstPost;
+    private bool _busy, _preview, _canAttach, _isFirstPost, _canPoll, _withPoll;
+    private readonly PollService.Draft _poll = new();
     private MarkupString _previewHtml;
     private BoardSettings? _settings;
     private string _accept = "";
@@ -182,6 +193,7 @@
             _forum = snap.Forum(ForumId);
         }
         _canAttach = _forum != null && perms.CanPostAttachment(user, _forum);
+        _canPoll = ForumId > 0 && _forum != null && perms.CanPostPoll(user, _forum);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -256,6 +268,7 @@
         try
         {
             var user = await Current.GetAsync();
+            if (_withPoll && _canPoll && _poll.Validate() is { } pollErr) { _error = pollErr; return; }
             PostResult r;
             if (EditPostId > 0 && _post != null && _thread != null)
                 r = await Posting.EditAsync(user, _post, _thread, ShowTitle ? _title : null, _text, _reason, _uploads, _remove);
@@ -266,6 +279,7 @@
             else r = PostResult.Fail("Ziel nicht gefunden.");
 
             if (!r.Ok) { _error = r.Error; return; }
+            if (_withPoll && _canPoll && ForumId > 0) await Polls.CreateAsync(r.ThreadId, _poll);
             try { await JS.InvokeVoidAsync("vbf.clearDraft", DraftKey); } catch (JSDisconnectedException) { }
             if (r.Moderated)
                 Nav.NavigateTo(ForumId > 0 ? $"/forum/{ForumId}?moderated=1" : $"/thread/{r.ThreadId}?moderated=1", forceLoad: true);

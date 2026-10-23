@@ -1,6 +1,7 @@
 @page "/members"
 @page "/user/{Id:long}"
 @page "/user/{Id:long}/{Slug}"
+@inject ReputationService Rep
 @inject BoardCache Cache
 @inject CurrentUser Current
 @inject UserRepository Users
@@ -27,6 +28,15 @@
                     <span class="muted small">
                         @GroupTitle(_profile.UserGroupId) · Mitglied seit @ForumTime.Date(_profile.JoinDate) · @ForumTime.Number(_profile.Posts) @(_profile.Posts == 1 ? "Beitrag" : "Beiträge") · zuletzt aktiv @ForumTime.Relative(_profile.LastActivity)
                     </span>
+                    @if (_rep != null)
+                    {
+                        var (pips, sign) = ReputationService.Pips(_rep.Value.Rep);
+                        <span class="row small" style="gap:8px">
+                            <span class="rep-pips @(sign > 0 ? "pos" : sign < 0 ? "neg" : "neutral")" aria-hidden="true">@for (var i = 0; i < pips; i++) { <i class="@(i >= 5 ? "hi" : "")"></i> }</span>
+                            <span>@_profile.DisplayName @_rep.Value.Level</span>
+                            @if (_viewerIsAdmin) { <a href="/account/reputation?user=@_profile.UserId">(@ForumTime.Number(_rep.Value.Rep) Punkte)</a> }
+                        </span>
+                    }
                     @if (!string.IsNullOrWhiteSpace(_profile.Homepage)) { <a class="small" href="@VbForum.Core.BbCode.BbCodeRenderer.SafeUrl(_profile.Homepage)" rel="nofollow ugc noopener" target="_blank">@_profile.Homepage</a> }
                     @foreach (var (k, v) in _fields.Where(f => !string.IsNullOrWhiteSpace(f.Value)))
                     {
@@ -113,6 +123,8 @@
     private BoardSnapshot? _snap;
     private ForumUser? _me;
     private UserRow? _profile;
+    private (long Rep, string Level)? _rep;
+    private bool _viewerIsAdmin;
     private Dictionary<string, string> _fields = new();
     private MarkupString _signature;
     private PagedResult<Post>? _posts;
@@ -130,6 +142,13 @@
             if (Id > 0)
             {
                 _profile = await Users.GetAsync(Id);
+                var snapR = await Cache.GetAsync();
+                if (_profile != null && snapR.Settings.ReputationEnabled)
+                {
+                    var sum = await Rep.SummaryAsync(_profile.UserId);
+                    _rep = (sum.Reputation, ReputationService.LevelFor(await Rep.LevelsAsync(), sum.Reputation).Title);
+                    _viewerIsAdmin = (await Current.GetAsync()).IsAdmin;
+                }
                 if (_profile == null) return;
                 _fields = await Users.ProfileFieldsAsync(Id, _snap.ProfileFields.Keys);
                 _signature = await Renderer.RenderSignatureAsync(await Users.SignatureAsync(Id));

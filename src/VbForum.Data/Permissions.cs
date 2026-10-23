@@ -137,6 +137,11 @@ public sealed class Permissions(BoardSnapshot s)
         !u.IsGuest && !u.IsBanned && !f.IsCategory && CanSeeForum(u, f) &&
         (IsModerator(u, f) || (PostingAllowed(f) && Has(u, f, ForumPerm.CanPostNew)));
 
+    /// <summary>Umfrage anlegen (beim neuen Thema oder nachträglich durch den Themenstarter).</summary>
+    public bool CanPostPoll(ForumUser u, Forum f) =>
+        s.Settings.PollsEnabled && !u.IsGuest && !u.IsBanned && !f.IsCategory && CanSeeForum(u, f) &&
+        (IsModerator(u, f) || Has(u, f, ForumPerm.CanPostPoll));
+
     public bool CanReply(ForumUser u, Forum f, ForumThread t)
     {
         if (u.IsGuest || u.IsBanned || t.IsRedirect) return false;

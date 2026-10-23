@@ -96,6 +96,29 @@ public sealed class BoardSettings
     public IReadOnlySet<int> PremiumForums => ParseIds(PremiumForumIds);
     public int MinSecondsBetweenPosts { get; set; } = 15;
 
+    // ---------- Umfragen & Reputation (Standardwerte wie vBulletin 4) ----------
+    public bool PollsEnabled { get; set; } = true;
+    public bool ReputationEnabled { get; set; } = true;
+    public bool ReputationAllowNegative { get; set; } = true;
+    /// <summary>Bewertende Benutzer für den Empfänger sichtbar (vB: anonym).</summary>
+    public bool ReputationShowNames { get; set; }
+    /// <summary>Feste Stärke für Administratoren (vB adminpower), 0 = normale Berechnung.</summary>
+    public int ReputationAdminPower { get; set; } = 5;
+    /// <summary>Mindestens so viele Beiträge, um bewerten zu dürfen (vB minreputationpost).</summary>
+    public int ReputationMinPosts { get; set; } = 50;
+    /// <summary>Mindest-Reputation, um bewerten zu dürfen (vB minreputationcount).</summary>
+    public int ReputationMinReputation { get; set; } = 10;
+    /// <summary>+1 Stärke je X Beiträge (vB pcpower, 0 = aus).</summary>
+    public int ReputationPostsPerPoint { get; set; } = 500;
+    /// <summary>+1 Stärke je X Reputationspunkte (vB kppower, 0 = aus).</summary>
+    public int ReputationRepPerPoint { get; set; } = 100;
+    /// <summary>+1 Stärke je X Tage Mitgliedschaft (vB rdpower, 0 = aus).</summary>
+    public int ReputationDaysPerPoint { get; set; } = 365;
+    /// <summary>Höchstens so viele Bewertungen in 24 Stunden (vB maxreputationperday).</summary>
+    public int ReputationDailyLimit { get; set; } = 10;
+    /// <summary>So viele andere Benutzer bewerten, bevor derselbe wieder bewertet werden kann (vB reputationrepeat).</summary>
+    public int ReputationSpread { get; set; } = 10;
+
     public bool SmtpConfigured => !string.IsNullOrWhiteSpace(SmtpHost) && !string.IsNullOrWhiteSpace(MailFrom);
 
     public static IReadOnlySet<int> ParseIds(string s) =>

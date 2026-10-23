@@ -1,0 +1,100 @@
+@page "/account/reputation"
+@attribute [Authorize]
+@inject CurrentUser Current
+@inject BoardCache Cache
+@inject ReputationService Rep
+@inject UserRepository Users
+
+<PageTitle>Reputation</PageTitle>
+
+@if (!_loaded) { return; }
+<main class="page container">
+    <AccountShell User="_user!" Active="rep">
+        <section class="card card-pad stack" style="gap:6px">
+            <h2 class="card-title">@(_other ? $"Reputation von {_name}" : "Deine Reputation")</h2>
+            @{ var (pips, sign) = ReputationService.Pips(_sum.Reputation); }
+            <div class="row" style="gap:10px">
+                <span class="rep-pips @(sign > 0 ? "pos" : sign < 0 ? "neg" : "neutral")" aria-hidden="true">@for (var i = 0; i < pips; i++) { <i class="@(i >= 5 ? "hi" : "")"></i> }</span>
+                <strong>@_name @_level</strong>
+            </div>
+            <p class="small muted" style="margin:0">
+                @ForumTime.Number(_sum.Reputation) Punkte · @_sum.Positive positive und @_sum.Negative negative Bewertungen
+                @if (!_other) { <text> · Deine Bewertungen haben derzeit die Stärke @_power.</text> }
+            </p>
+            @if (!_snap!.Settings.ReputationEnabled) { <div class="alert alert-info">Die Reputation ist im Forum derzeit abgeschaltet.</div> }
+        </section>
+
+        <section class="card card-pad">
+            <h2 class="card-title" style="margin-bottom:6px">Zuletzt erhaltene Bewertungen</h2>
+            @if (_list.Count == 0)
+            {
+                <p class="muted" style="margin:0">Noch keine Bewertungen.</p>
+            }
+            else
+            {
+                <div class="rep-list">
+                    @foreach (var r in _list)
+                    {
+                        <div class="rep-row">
+                            <span class="rep-badge @(r.Reputation >= 0 ? "pos" : "neg")" title="@(r.Reputation >= 0 ? "positiv" : "negativ")">@(r.Reputation >= 0 ? "+" : "−")</span>
+                            <div class="stack" style="gap:2px;min-width:0">
+                                <span>
+                                    @if (r.ThreadId > 0 && _readable.Contains(r.ForumId)) { <a href="/post/@r.PostId">@HtmlUtil.CleanTitle(r.ThreadTitle)</a> }
+                                    else { <span class="muted">Beitrag nicht verfügbar</span> }
+                                </span>
+                                @if (!string.IsNullOrWhiteSpace(r.Reason)) { <span>„@r.DisplayReason“</span> }
+                                <span class="small muted">
+                                    @ForumTime.Full(r.Dateline)
+                                    @if (_showNames) { <text> · von @(string.IsNullOrEmpty(r.WhoAddedName) ? "gelöschtem Benutzer" : HtmlUtil.CleanTitle(r.WhoAddedName))</text> }
+                                    @if (_user!.IsAdmin) { <text> · Stärke @r.Reputation</text> }
+                                </span>
+                            </div>
+                            @if (_user!.IsAdmin)
+                            {
+                                <form method="post" action="/reputation/@r.ReputationId/delete" class="inline">
+                                    <AntiforgeryToken />
+                                    <input type="hidden" name="returnUrl" value="/account/reputation@(_other ? $"?user={_uid}" : "")" />
+                                    <button type="submit" class="btn btn-ghost btn-sm" data-confirm="Bewertung löschen? Die Punkte werden wieder abgezogen.">Löschen</button>
+                                </form>
+                            }
+                            else { <span></span> }
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+    </AccountShell>
+</main>
+
+@code {
+    [SupplyParameterFromQuery(Name = "user")] public long? UserQ { get; set; }
+    private ForumUser? _user;
+    private BoardSnapshot? _snap;
+    private bool _loaded, _other, _showNames;
+    private long _uid;
+    private string _name = "", _level = "";
+    private int _power;
+    private (long Reputation, int Positive, int Negative) _sum;
+    private List<ReputationService.Received> _list = new();
+    private HashSet<int> _readable = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = await Current.GetAsync();
+        _snap = await Cache.GetAsync();
+        _uid = _user.UserId;
+        _name = _user.Username;
+        // Admins können die Bewertungen anderer Benutzer ansehen und löschen
+        if (UserQ is > 0 && UserQ != _user.UserId && _user.IsAdmin && await Users.GetAsync(UserQ.Value) is { } other)
+        {
+            _uid = other.UserId; _name = other.DisplayName; _other = true;
+        }
+        _sum = await Rep.SummaryAsync(_uid);
+        _level = ReputationService.LevelFor(await Rep.LevelsAsync(), _sum.Reputation).Title;
+        _list = await Rep.ReceivedAsync(_uid, 100);
+        _power = _other ? 0 : await Rep.PowerAsync(_user);
+        _showNames = _user.IsAdmin || _snap.Settings.ReputationShowNames;
+        _readable = new Permissions(_snap).ReadableForumIds(_user);
+        _loaded = true;
+    }
+}

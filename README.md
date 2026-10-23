@@ -21,6 +21,11 @@ board can keep running in parallel until you switch over.
   - Moderators can be assigned per forum.
 - Login with existing vB passwords. On first login a modern PBKDF2 hash is created.
 - Search (FULLTEXT when available), sorting, "new posts", subscriptions with e-mail notification.
+- Polls (`vb_poll`/`vb_pollvote`): created with a new thread or added later by the thread starter, single or multiple
+  choice, optional end date and public voter lists. Moderators can edit, close, reopen and delete polls.
+- Reputation (`vb_reputation`): the vB power formula (posts, reputation and membership days, admin power, negative
+  ratings count half), daily limit and "spread" rule, level texts from the vB phrases, pips in the postbit and a list of
+  received ratings in the user area. Admins can delete ratings. The vB values can be imported under *Admin › Einstellungen*.
 - User area: profile, avatar, password, e-mail address, private messages with a pop-up for new messages.
 - Admin area:
   - Board settings, logo and SMTP.
@@ -118,6 +123,8 @@ and locks the table, so it is best done at night.
   history.
 - Read markers (`vb_threadread`/`vb_forumread`) and subscriptions.
 - Private messages (`vb_pm`/`vb_pmtext`, including the serialized `touserarray`).
+- Polls in vB format (`options`/`votes` as `a|||b|||c`, `vb_thread.pollid`) and reputation (`vb_reputation`,
+  `vb_user.reputation`/`reputationlevelid`). On a fresh install these four tables are created if missing.
 - Attachments as blobs in `vb_filedata`/`vb_attachment`, avatars in `vb_customavatar`, bans in `vb_userban`.
 - **Charsets.** Old vB boards often have `latin1` tables. Characters outside Windows-1252 (emoji, Cyrillic …) are
   stored as `&#NNN;`, as vB does. Reading uses utf8mb4.
@@ -313,7 +320,7 @@ This directory contains:
 
 ## Not (yet) included
 
-Polls, reputation and infractions, calendar, blogs, social groups, thread prefixes, thread ratings, forum
+Infractions, calendar, blogs, social groups, thread prefixes, thread ratings, forum
 subscriptions, ignore list. The vB data for these is left untouched and can be supported later.
 
 ## License

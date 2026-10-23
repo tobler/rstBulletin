@@ -1,0 +1,106 @@
+@* Umfrage im Thema (statisch gerendert; Abstimmen per Formular-POST). *@
+@{
+    var p = Poll;
+    var opts = p.OptionList;
+    var votes = p.VoteList;
+    var total = Math.Max(1, p.IsMultiple ? Math.Max(p.Voters, 1) : votes.Sum());
+    var now = ForumTime.Now;
+    var closed = p.IsClosed(now);
+    var showForm = CannotVote == null && MyVotes.Count == 0 && !ShowResults;
+}
+<section class="card card-pad poll" aria-labelledby="poll-q">
+    <div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px">
+        <div class="stack" style="gap:2px;min-width:0">
+            <span class="small muted" style="font-weight:600;text-transform:uppercase;letter-spacing:.04em"><Icon Name="bar" Size="14" /> Umfrage</span>
+            <h2 id="poll-q" style="font-size:18px;margin:0">@p.DisplayQuestion</h2>
+        </div>
+        @if (CanManage)
+        {
+            <div class="row" style="gap:6px">
+                <a class="btn btn-sm" href="/thread/@ThreadId/poll">Bearbeiten</a>
+                <form method="post" action="/poll/@ThreadId/manage" class="inline">
+                    <AntiforgeryToken />
+                    <input type="hidden" name="action" value="@(p.Active != 0 ? "close" : "open")" />
+                    <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+                    <button type="submit" class="btn btn-sm">@(p.Active != 0 ? "Beenden" : "Wieder öffnen")</button>
+                </form>
+                <form method="post" action="/poll/@ThreadId/manage" class="inline">
+                    <AntiforgeryToken />
+                    <input type="hidden" name="action" value="delete" />
+                    <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+                    <button type="submit" class="btn btn-sm btn-danger" data-confirm="Umfrage mit allen Stimmen löschen?">Löschen</button>
+                </form>
+            </div>
+        }
+    </div>
+
+    @if (showForm)
+    {
+        <form method="post" action="/poll/@ThreadId/vote" class="stack" style="gap:8px;margin-top:12px">
+            <AntiforgeryToken />
+            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+            <fieldset class="stack" style="gap:6px;border:0;padding:0;margin:0">
+                <legend class="sr-only">@p.DisplayQuestion</legend>
+                @for (var i = 0; i < opts.Count; i++)
+                {
+                    <label class="poll-choice">
+                        <input type="@(p.IsMultiple ? "checkbox" : "radio")" name="option" value="@(i + 1)" required="@(!p.IsMultiple)" />
+                        <span>@opts[i]</span>
+                    </label>
+                }
+            </fieldset>
+            <div class="row" style="gap:10px">
+                <button type="submit" class="btn btn-primary">Abstimmen</button>
+                <a class="small" href="@ResultsUrl">Ergebnis ansehen</a>
+                @if (p.IsMultiple) { <span class="small muted">Mehrfachauswahl möglich</span> }
+            </div>
+        </form>
+    }
+    else
+    {
+        <ol class="poll-results" style="margin-top:12px">
+            @for (var i = 0; i < opts.Count; i++)
+            {
+                var n = i < votes.Count ? votes[i] : 0;
+                var pct = (int)Math.Round(n * 100.0 / total);
+                var mine = MyVotes.Contains(i + 1);
+                <li class="@(mine ? "mine" : "")">
+                    <div class="poll-line">
+                        <span>@opts[i]@if (mine) { <span class="pill pill-accent" style="margin-left:6px">deine Wahl</span> }</span>
+                        <span class="small muted">@ForumTime.Number(n) · @pct %</span>
+                    </div>
+                    <div class="poll-bar" role="presentation"><span style="width:@(pct)%"></span></div>
+                    @if (p.IsPublic && Voters.TryGetValue(i + 1, out var who) && who.Count > 0)
+                    {
+                        <div class="small muted" style="margin-top:2px">@string.Join(", ", who.Take(50).Select(w => w.Name))@(who.Count > 50 ? $" und {who.Count - 50} weitere" : "")</div>
+                    }
+                </li>
+            }
+        </ol>
+        @if (ShowResults && CannotVote == null && MyVotes.Count == 0)
+        {
+            <p class="small" style="margin:8px 0 0"><a href="@VoteUrl">Zurück zum Abstimmen</a></p>
+        }
+    }
+
+    <p class="small muted" style="margin:10px 0 0">
+        @ForumTime.Number(p.Voters) @(p.Voters == 1 ? "Teilnehmer" : "Teilnehmer")
+        @if (p.IsPublic) { <text> · öffentlich</text> }
+        @if (closed) { <text> · beendet</text> }
+        else if (p.EndsAt > 0) { <text> · endet @ForumTime.Full(p.EndsAt)</text> }
+        @if (CannotVote != null && !closed && MyVotes.Count == 0) { <text> · @CannotVote</text> }
+    </p>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public PollService.Poll Poll { get; set; } = default!;
+    [Parameter] public long ThreadId { get; set; }
+    [Parameter] public HashSet<int> MyVotes { get; set; } = new();
+    [Parameter] public Dictionary<int, List<(long UserId, string Name)>> Voters { get; set; } = new();
+    [Parameter] public string? CannotVote { get; set; }
+    [Parameter] public bool CanManage { get; set; }
+    [Parameter] public bool ShowResults { get; set; }
+    [Parameter] public string ReturnUrl { get; set; } = "";
+    [Parameter] public string ResultsUrl { get; set; } = "";
+    [Parameter] public string VoteUrl { get; set; } = "";
+}

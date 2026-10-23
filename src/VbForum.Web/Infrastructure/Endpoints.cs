@@ -9,6 +9,7 @@ using Microsoft.Net.Http.Headers;
 using VbForum.Core.Models;
 using VbForum.Core.Text;
 using VbForum.Data;
+using VbForum.Web.Components.Shared;
 
 namespace VbForum.Web.Infrastructure;
 
@@ -378,6 +379,77 @@ public static class Endpoints
         }).DisableAntiforgery();
 
         // Darstellung: hell / dunkel / automatisch – Cookie + beim Benutzer speichern
+        // ---------- Umfragen ----------
+
+        app.MapPost("/poll/{threadId:long}/vote", async (long threadId, HttpContext http, ThreadRepository threads, PollService polls, BoardCache cache) =>
+        {
+            var u = await http.ForumUserAsync();
+            var t = await threads.GetAsync(threadId);
+            var snap = await cache.GetAsync();
+            var f = t == null ? null : snap.Forum(t.ForumId);
+            var perms = new Permissions(snap);
+            if (t == null || f == null || !perms.CanReadThread(u, f, t)) return Results.NotFound();
+            var p = await polls.GetAsync(t.PollId);
+            if (p == null || t.IsRedirect) return Results.NotFound();
+            if (polls.CannotVote(u, f, t, p, perms) != null)
+                return u.IsGuest ? Results.LocalRedirect($"/login?returnUrl={Uri.EscapeDataString(Links.Thread(t))}") : Back(http, Links.Thread(t));
+            var choices = http.Request.Form["option"].Select(v => int.TryParse(v, out var i) ? i : 0).ToList();
+            await polls.VoteAsync(u, p, choices);
+            return Back(http, Links.Thread(t));
+        });
+
+        app.MapPost("/poll/{threadId:long}/manage", async (long threadId, HttpContext http, [FromForm] string action, ThreadRepository threads,
+            PollService polls, BoardCache cache, TokenRepository audit) =>
+        {
+            var u = await http.ForumUserAsync();
+            var t = await threads.GetAsync(threadId);
+            var snap = await cache.GetAsync();
+            var f = t == null ? null : snap.Forum(t.ForumId);
+            if (t == null || f == null || !new Permissions(snap).IsModerator(u, f)) return Results.StatusCode(403);
+            var p = await polls.GetAsync(t.PollId);
+            if (p == null || t.IsRedirect) return Back(http, Links.Thread(t));
+            switch (action)
+            {
+                case "close": await polls.SetActiveAsync(p.PollId, false); break;
+                case "open": await polls.SetActiveAsync(p.PollId, true); break;
+                case "delete": await polls.DeleteAsync(t.ThreadId, p.PollId); break;
+                default: return Results.BadRequest();
+            }
+            await audit.LogAsync(u, "poll." + action, $"{t.ThreadId} {HtmlUtil.CleanTitle(t.Title)}", http.ClientIp());
+            return Back(http, Links.Thread(t));
+        });
+
+        // ---------- Reputation ----------
+
+        app.MapPost("/post/{id:long}/reputation", async (long id, HttpContext http, [FromForm] string? value, [FromForm] string? reason,
+            PostRepository posts, ThreadRepository threads, ReputationService rep, BoardCache cache) =>
+        {
+            var u = await http.ForumUserAsync();
+            if (u.IsGuest) return Results.LocalRedirect("/login");
+            var p = await posts.GetAsync(id);
+            var t = p == null ? null : await threads.GetAsync(p.ThreadId);
+            var snap = await cache.GetAsync();
+            var f = t == null ? null : snap.Forum(t.ForumId);
+            if (p == null || t == null || f == null || !new Permissions(snap).CanReadThread(u, f, t)) return Results.NotFound();
+            var code = await rep.GiveAsync(u, p, value != "neg", reason) ?? "ok";
+            var back = http.Request.Form.TryGetValue("returnUrl", out var r) && r.ToString() is { } ru && ru.StartsWith('/') && !ru.StartsWith("//") ? ru : Links.Thread(t);
+            back = System.Text.RegularExpressions.Regex.Replace(back, @"([?&])rep(post)?=[^&#]*&?", "$1").TrimEnd('?', '&');
+            return Results.LocalRedirect($"{back}{(back.Contains('?') ? '&' : '?')}rep={code}&reppost={id}#post{id}");
+        });
+
+        app.MapPost("/reputation/{id:long}/delete", async (long id, HttpContext http, ReputationService rep, TokenRepository audit) =>
+        {
+            var u = await http.ForumUserAsync();
+            if (!u.IsAdmin) return Results.StatusCode(403);
+            var r = await rep.GetAsync(id);
+            if (r != null)
+            {
+                await rep.DeleteAsync(r);
+                await audit.LogAsync(u, "reputation.delete", $"#{r.ReputationId} Beitrag {r.PostId} an {r.UserId}: {r.Reputation}", http.ClientIp());
+            }
+            return Back(http, "/account/reputation");
+        });
+
         app.MapPost("/theme", async (HttpContext http, [FromForm] string? theme, UserRepository users) =>
         {
             var t = Theme.Normalize(theme);

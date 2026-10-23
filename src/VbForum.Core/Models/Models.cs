@@ -142,6 +142,7 @@ public sealed class PostAuthor
     public int HasCustomAvatar { get; set; }
     public long LastActivity { get; set; }
     public string? Signature { get; set; }
+    public long Reputation { get; set; }
 
     public string DisplayName => HtmlUtil.CleanTitle(Username);
 }

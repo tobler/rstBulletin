@@ -1,6 +1,7 @@
 @page "/admin/settings"
 @attribute [Authorize(Policy = "Admin")]
 @rendermode InteractiveServer
+@inject ReputationService RepService
 @inject BoardCache Cache
 @inject MailService Mail
 @inject CurrentUser Current
@@ -124,6 +125,26 @@
                 <span class="hint">Vor dem Test bitte speichern. <a href="/admin/mail-preview" target="_blank" rel="noopener">Vorschau der Mails ansehen</a> – mit Logo und Forenname aus diesen Einstellungen.</span>
             </section>
 
+            <section class="card card-pad stack">
+                <h2 class="card-title">Umfragen &amp; Reputation</h2>
+                <label class="toggle-row">Neue Umfragen erlauben (bestehende Umfragen bleiben immer sichtbar)<input type="checkbox" @bind="_s.PollsEnabled" /></label>
+                <label class="toggle-row">Reputation anzeigen und vergeben<input type="checkbox" @bind="_s.ReputationEnabled" /></label>
+                <label class="toggle-row">Negative Bewertungen erlauben<input type="checkbox" @bind="_s.ReputationAllowNegative" /></label>
+                <label class="toggle-row">Empfänger sehen, wer sie bewertet hat (sonst anonym, wie in vBulletin)<input type="checkbox" @bind="_s.ReputationShowNames" /></label>
+                <div class="form-grid">
+                    <div class="field"><label for="rp-mp">Mindestanzahl Beiträge zum Bewerten</label><input id="rp-mp" type="number" min="0" @bind="_s.ReputationMinPosts" /></div>
+                    <div class="field"><label for="rp-mr">Mindest-Reputation zum Bewerten</label><input id="rp-mr" type="number" @bind="_s.ReputationMinReputation" /></div>
+                    <div class="field"><label for="rp-dl">Bewertungen pro 24 Stunden</label><input id="rp-dl" type="number" min="0" @bind="_s.ReputationDailyLimit" /><span class="hint">0 = unbegrenzt</span></div>
+                    <div class="field"><label for="rp-sp">Erst X andere bewerten, bevor derselbe wieder geht</label><input id="rp-sp" type="number" min="0" @bind="_s.ReputationSpread" /></div>
+                    <div class="field"><label for="rp-pp">+1 Stärke je … Beiträge</label><input id="rp-pp" type="number" min="0" @bind="_s.ReputationPostsPerPoint" /><span class="hint">0 = aus</span></div>
+                    <div class="field"><label for="rp-rp">+1 Stärke je … Reputationspunkte</label><input id="rp-rp" type="number" min="0" @bind="_s.ReputationRepPerPoint" /><span class="hint">0 = aus</span></div>
+                    <div class="field"><label for="rp-dp">+1 Stärke je … Tage Mitgliedschaft</label><input id="rp-dp" type="number" min="0" @bind="_s.ReputationDaysPerPoint" /><span class="hint">0 = aus</span></div>
+                    <div class="field"><label for="rp-ap">Feste Stärke für Administratoren</label><input id="rp-ap" type="number" min="0" @bind="_s.ReputationAdminPower" /><span class="hint">0 = normal berechnen</span></div>
+                </div>
+                <p class="small muted" style="margin:0">Berechnung wie in vBulletin: Stärke = 1 + Beiträge/… + Reputation/… + Tage/…; negative Bewertungen zählen halb. Die Texte der Stufen kommen aus der alten vBulletin-Datenbank.</p>
+                <div><button type="button" class="btn btn-sm" @onclick="ImportRep">Werte aus der alten vBulletin-Konfiguration übernehmen</button></div>
+            </section>
+
             <div class="form-actions" style="position:sticky;bottom:12px">
                 <button type="button" class="btn" @onclick="Reload">Verwerfen</button>
                 <button type="button" class="btn btn-primary" @onclick="Save" disabled="@_busy">Einstellungen speichern</button>
@@ -164,6 +185,14 @@
         }
         catch (Exception ex) { _err = "Speichern fehlgeschlagen: " + ex.Message; }
         finally { _busy = false; }
+    }
+
+    private async Task ImportRep()
+    {
+        _msg = _err = null;
+        var n = await RepService.ImportLegacySettingsAsync(_s!);
+        if (n == 0) _err = "In der Datenbank wurden keine vBulletin-Einstellungen zur Reputation gefunden.";
+        else _msg = $"{n} Werte aus vBulletin übernommen – bitte noch speichern.";
     }
 
     /// <summary>Hochgeladenes Bild prüfen. SVG nur ohne Skripte.</summary>

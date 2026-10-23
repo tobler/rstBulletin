@@ -1,0 +1,104 @@
+@page "/thread/{ThreadId:long}/poll"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject BoardCache Cache
+@inject CurrentUser Current
+@inject ThreadRepository Threads
+@inject PollService Polls
+@inject TokenRepository Audit
+@inject NavigationManager Nav
+
+<PageTitle>Umfrage – @_snap?.Settings.BoardName</PageTitle>
+
+<main class="page container" style="max-width:760px">
+    @if (!_loaded) { }
+    else if (_thread == null || _draft == null)
+    {
+        <div class="card card-pad">
+            <h1 class="card-title">Nicht möglich</h1>
+            <p class="muted">@(_error ?? "Du darfst bei diesem Thema keine Umfrage anlegen oder bearbeiten.")</p>
+            <p><a class="btn" href="/">Zurück</a></p>
+        </div>
+    }
+    else
+    {
+        <nav aria-label="Brotkrumen" class="breadcrumb">
+            <a href="/">Foren</a><span aria-hidden="true">›</span><a href="@Links.Thread(_thread)">@_thread.DisplayTitle</a>
+        </nav>
+        <div class="page-head"><h1>@(_existing == null ? "Umfrage hinzufügen" : "Umfrage bearbeiten")</h1></div>
+        <section class="card card-pad stack" style="gap:14px">
+            @if (_error != null) { <div class="alert alert-err" role="alert">@_error</div> }
+            @if (_existing != null && _existing.Voters > 0)
+            {
+                <div class="alert alert-info">Es wurde schon abgestimmt (@_existing.Voters Teilnehmer). Antworten können umbenannt und ergänzt, aber nicht entfernt werden.</div>
+            }
+            <PollFields Draft="_draft" ExistingOptions="@(_existing?.OptionList.Count ?? 0)" ShowActive="_existing != null" />
+            <div class="row" style="justify-content:flex-end">
+                <a class="btn" href="@Links.Thread(_thread)">Abbrechen</a>
+                <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="SaveAsync">@(_existing == null ? "Umfrage anlegen" : "Speichern")</button>
+            </div>
+        </section>
+    }
+</main>
+
+@code {
+    [Parameter] public long ThreadId { get; set; }
+    private BoardSnapshot? _snap;
+    private ForumThread? _thread;
+    private PollService.Poll? _existing;
+    private PollService.Draft? _draft;
+    private string? _error;
+    private bool _loaded, _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _snap = await Cache.GetAsync();
+            var u = await Current.GetAsync();
+            var t = await Threads.GetAsync(ThreadId);
+            var f = t == null ? null : _snap.Forum(t.ForumId);
+            if (t == null || f == null || t.IsRedirect) return;
+            var perms = new Permissions(_snap);
+            if (!perms.CanReadThread(u, f, t)) return;
+            var isMod = perms.IsModerator(u, f);
+            _existing = await Polls.GetAsync(t.PollId);
+            if (_existing != null)
+            {
+                // Bearbeiten: Moderatoren
+                if (!isMod) return;
+                _draft = PollService.Draft.From(_existing);
+            }
+            else
+            {
+                // Nachträglich hinzufügen: Moderatoren oder der Themenstarter (Thema offen, Recht „Umfragen erstellen“)
+                if (!perms.CanPostPoll(u, f) || !(isMod || (t.PostUserId == u.UserId && t.IsOpen))) return;
+                _draft = new PollService.Draft();
+            }
+            _thread = t;
+        }
+        finally { _loaded = true; }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_busy || _thread == null || _draft == null) return;
+        _busy = true; _error = null;
+        try
+        {
+            var u = await Current.GetAsync();
+            if (_existing == null)
+            {
+                var (_, err) = await Polls.CreateAsync(_thread.ThreadId, _draft);
+                _error = err;
+            }
+            else
+            {
+                _error = await Polls.UpdateAsync(_existing, _draft);
+                if (_error == null) await Audit.LogAsync(u, "poll.edit", $"{_thread.ThreadId} {_thread.DisplayTitle}", "");
+            }
+            if (_error == null) Nav.NavigateTo(Links.Thread(_thread), forceLoad: true);
+        }
+        finally { _busy = false; }
+    }
+}

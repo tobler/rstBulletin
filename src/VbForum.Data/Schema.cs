@@ -127,6 +127,60 @@ public sealed class Schema(Db db)
         await Col(Tables.OwnPlan, "rst_paymenttype", "`rst_paymenttype` INT NOT NULL DEFAULT 1");
         await Col(Tables.OwnPlan, "rst_rebilling", "`rst_rebilling` TINYINT NOT NULL DEFAULT 0");
         await Col(Tables.OwnPlan, "rst_rebillingdays", "`rst_rebillingdays` INT NOT NULL DEFAULT 0");
+
+        // vB-Tabellen für Umfragen und Reputation (in übernommenen vB-Datenbanken vorhanden, bei Neuinstallationen anlegen)
+        var t = db.T;
+        await c.ExecuteAsync($"""
+            CREATE TABLE IF NOT EXISTS {t.Poll} (
+              `pollid` int(10) unsigned NOT NULL AUTO_INCREMENT,
+              `question` varchar(100) NOT NULL DEFAULT '',
+              `dateline` int(10) unsigned NOT NULL DEFAULT 0,
+              `options` text DEFAULT NULL,
+              `votes` text DEFAULT NULL,
+              `active` smallint(6) NOT NULL DEFAULT 1,
+              `numberoptions` smallint(5) unsigned NOT NULL DEFAULT 0,
+              `timeout` smallint(5) unsigned NOT NULL DEFAULT 0,
+              `multiple` smallint(5) unsigned NOT NULL DEFAULT 0,
+              `voters` smallint(5) unsigned NOT NULL DEFAULT 0,
+              `public` smallint(6) NOT NULL DEFAULT 0,
+              `lastvote` int(10) unsigned NOT NULL DEFAULT 0,
+              PRIMARY KEY (`pollid`)
+            ) DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS {t.PollVote} (
+              `pollvoteid` int(10) unsigned NOT NULL AUTO_INCREMENT,
+              `pollid` int(10) unsigned NOT NULL DEFAULT 0,
+              `userid` int(10) unsigned DEFAULT NULL,
+              `votedate` int(10) unsigned NOT NULL DEFAULT 0,
+              `voteoption` int(10) unsigned NOT NULL DEFAULT 0,
+              `votetype` int(10) unsigned NOT NULL DEFAULT 0,
+              PRIMARY KEY (`pollvoteid`),
+              UNIQUE KEY `pollid` (`pollid`,`userid`,`votetype`),
+              KEY `userid` (`userid`)
+            ) DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS {t.Reputation} (
+              `reputationid` int(10) unsigned NOT NULL AUTO_INCREMENT,
+              `postid` int(10) unsigned NOT NULL DEFAULT 1,
+              `userid` int(10) unsigned NOT NULL DEFAULT 1,
+              `reputation` int(11) NOT NULL DEFAULT 0,
+              `whoadded` int(10) unsigned NOT NULL DEFAULT 0,
+              `reason` varchar(250) DEFAULT '',
+              `dateline` int(10) unsigned NOT NULL DEFAULT 0,
+              PRIMARY KEY (`reputationid`),
+              UNIQUE KEY `whoadded_postid` (`whoadded`,`postid`),
+              KEY `userid` (`userid`),
+              KEY `multi` (`postid`,`userid`),
+              KEY `dateline` (`dateline`)
+            ) DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS {t.ReputationLevel} (
+              `reputationlevelid` int(10) unsigned NOT NULL AUTO_INCREMENT,
+              `minimumreputation` int(11) NOT NULL DEFAULT 0,
+              PRIMARY KEY (`reputationlevelid`),
+              KEY `reputationlevel` (`minimumreputation`)
+            ) DEFAULT CHARSET=utf8mb4;
+            """);
     }
 
     public sealed record TableInfo(string Name, string Engine, string Collation, long Rows, long DataBytes, long IndexBytes);

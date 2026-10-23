@@ -115,6 +115,10 @@ public sealed class Tables(string p)
     public string ThreadViews => N("threadviews");
     public string Announcement => N("announcement");
     public string AnnouncementRead => N("announcementread");
+    public string Poll => N("poll");
+    public string PollVote => N("pollvote");
+    public string Reputation => N("reputation");
+    public string ReputationLevel => N("reputationlevel");
 
     public const string OwnSetting = "`vbf_setting`";
     public const string OwnUserAuth = "`vbf_userauth`";
