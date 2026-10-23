@@ -2,6 +2,7 @@
 @inject BoardCache Cache
 @inject CurrentUser Current
 @inject PremiumService Premium
+@inject NavigationManager Nav
 
 <PageTitle>Premium – @_snap?.Settings.BoardName</PageTitle>
 
@@ -49,6 +50,12 @@
         {
             _snap = await Cache.GetAsync();
             _user = await Current.GetAsync();
+            if (_user.IsGuest)
+            {
+                // Abschließen nur mit Benutzerkonto
+                Nav.NavigateTo($"/login?returnUrl={Uri.EscapeDataString("/" + Nav.ToBaseRelativePath(Nav.Uri))}", forceLoad: true);
+                return;
+            }
             if (ForumId is int f) _forum = _snap.Forum(f);
             if (!_user.IsGuest)
             {

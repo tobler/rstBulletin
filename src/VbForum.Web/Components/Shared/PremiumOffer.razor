@@ -13,7 +13,16 @@
                 <div class="post-body" style="font-size:15px">@_text</div>
             </div>
         </div>
-        @if (_plans.Count == 0)
+        @if (User.IsGuest)
+        {
+            @* Buchen geht nur mit Konto – Gäste melden sich erst an oder registrieren sich *@
+            <p style="margin:0">Um Premium zu buchen, melde dich bitte an. Noch kein Konto? Die Registrierung ist kostenlos.</p>
+            <div class="row">
+                <a class="btn btn-primary" href="/login?returnUrl=@Uri.EscapeDataString(ReturnUrl)">Anmelden</a>
+                <a class="btn" href="/register">Kostenlos registrieren</a>
+            </div>
+        }
+        else if (_plans.Count == 0)
         {
             <p class="muted" style="margin:0">Derzeit sind keine Abos buchbar. Bitte wende dich an die Forenleitung.</p>
         }
@@ -28,11 +37,7 @@
                         <div class="plan-price">@p.PriceText</div>
                         <div class="plan-sub">@(p.IsLifetime ? "einmalig, lebenslanger Zugang" : p.DurationText)@(p.PerMonthText != null ? $" · {p.PerMonthText}" : "")</div>
                         @if (!string.IsNullOrWhiteSpace(p.Description)) { <div class="small muted">@p.Description</div> }
-                        @if (User.IsGuest)
-                        {
-                            <a class="btn @(p.Highlight ? "btn-primary" : "")" href="/login?returnUrl=@Uri.EscapeDataString(ReturnUrl)">Anmelden &amp; buchen</a>
-                        }
-                        else if (p.PayMode != "rstpay" && string.IsNullOrWhiteSpace(p.PayUrl))
+                        @if (p.PayMode != "rstpay" && string.IsNullOrWhiteSpace(p.PayUrl))
                         {
                             <span class="btn" aria-disabled="true" style="opacity:.6">Bald verfügbar</span>
                         }
@@ -43,14 +48,7 @@
                     </div>
                 }
             </div>
-            @if (User.IsGuest)
-            {
-                <p class="small muted" style="margin:0">Noch kein Konto? <a href="/register">Jetzt kostenlos registrieren</a> und danach Premium buchen.</p>
-            }
-            else
-            {
-                <p class="small muted" style="margin:0">Die Zahlung läuft über unseren Zahlungsdienst rstpay. Danach wird dein Zugang automatisch freigeschaltet.</p>
-            }
+            <p class="small muted" style="margin:0">Die Zahlung läuft über unseren Zahlungsdienst rstpay. Danach wird dein Zugang automatisch freigeschaltet.</p>
         }
     </section>
 }
