@@ -41,27 +41,46 @@
         }
         else if (_pm != null)
         {
-            <article class="card card-pad stack">
+            <section class="card card-pad stack">
                 <div class="row" style="justify-content:space-between">
                     <h2 class="card-title" style="margin:0">@_pm.DisplayTitle</h2>
                     <a class="btn btn-sm" href="/account/pm@(_pm.FolderId == PmRepository.Sent ? "?folder=sent" : "")">← Zurück</a>
                 </div>
-                <div class="row small muted">
-                    <Avatar UserId="_pm.FromUserId" Name="@HtmlUtil.CleanTitle(_pm.FromUsername)" Size="32" />
-                    <span>Von <strong style="color:var(--ink)"><UserName UserId="_pm.FromUserId" Name="@HtmlUtil.CleanTitle(_pm.FromUsername)" IsAdmin="_user!.IsAdmin" /></strong> an @string.Join(", ", PmRepository.Recipients(_pm.ToUserArray)) · @ForumTime.Full(_pm.Dateline)</span>
-                </div>
-                <div class="post-body">@_body</div>
-                <div class="post-actions">
-                    <form method="post" @formname="pmdelete" @onsubmit="DeleteAsync" class="inline">
-                        <AntiforgeryToken />
-                        <button type="submit" class="btn btn-sm btn-danger" data-confirm="Nachricht löschen?">Löschen</button>
-                    </form>
-                    @if (_pm.FolderId != PmRepository.Sent && _pm.FromUserId > 0)
+                @if (_conversation.Count > 1)
+                {
+                    <p class="small muted" style="margin:0">Gesprächsverlauf · @_conversation.Count Nachrichten, die neueste unten</p>
+                }
+            </section>
+            @foreach (var m in _conversation)
+            {
+                var mine = m.FromUserId == _user!.UserId;
+                var current = m.PmTextId == _pm.PmTextId;
+                <article id="pm@(m.PmId)" class="card card-pad stack pm-msg @(mine ? "pm-mine" : "") @(current ? "pm-current" : "")">
+                    <div class="row small muted">
+                        <Avatar UserId="m.FromUserId" Name="@HtmlUtil.CleanTitle(m.FromUsername)" Size="32" />
+                        <span>
+                            @if (mine) { <strong style="color:var(--ink)">Du</strong> }
+                            else { <strong style="color:var(--ink)"><UserName UserId="m.FromUserId" Name="@HtmlUtil.CleanTitle(m.FromUsername)" IsAdmin="_user.IsAdmin" /></strong> }
+                            an @string.Join(", ", PmRepository.Recipients(m.ToUserArray)) · @ForumTime.Full(m.Dateline)
+                            @if (m.MessageRead == 2 && !mine) { <span class="pill" style="margin-left:6px">beantwortet</span> }
+                        </span>
+                    </div>
+                    <div class="post-body">@_bodies[m.PmTextId]</div>
+                    @if (current)
                     {
-                        <a class="btn btn-sm btn-primary" href="/account/pm/new?reply=@_pm.PmId"><Icon Name="reply" />Antworten</a>
+                        <div class="post-actions">
+                            <form method="post" @formname="pmdelete" @onsubmit="DeleteAsync" class="inline">
+                                <AntiforgeryToken />
+                                <button type="submit" class="btn btn-sm btn-danger" data-confirm="Nachricht löschen?">Löschen</button>
+                            </form>
+                        </div>
                     }
-                </div>
-            </article>
+                </article>
+            }
+            @if (_replyTo != null)
+            {
+                <div class="form-actions"><a class="btn btn-primary" href="/account/pm/new?reply=@_replyTo.PmId"><Icon Name="reply" />Antworten</a></div>
+            }
         }
         else
         {
@@ -115,8 +134,9 @@
     private bool _loaded, _isNew, _sent;
     private ForumUser? _user;
     private PagedResult<PrivateMessage>? _list;
-    private PrivateMessage? _pm;
-    private MarkupString _body;
+    private PrivateMessage? _pm, _replyTo;
+    private List<PrivateMessage> _conversation = new();
+    private readonly Dictionary<long, MarkupString> _bodies = new();
     private string? _message, _error;
 
     protected override async Task OnInitializedAsync()
@@ -146,8 +166,13 @@
             {
                 _pm = await Pms.GetAsync(_user.UserId, PmId);
                 if (_pm == null) { _error = "Nachricht nicht gefunden."; await LoadListAsync(); return; }
-                _body = Renderer.Render(_pm.Message, await Renderer.ContextAsync(null));
                 if (_pm.IsUnread) await Pms.MarkReadAsync(_user.UserId, PmId);
+                _conversation = await Pms.ConversationAsync(_user.UserId, _pm);
+                if (!_conversation.Any(m => m.PmTextId == _pm.PmTextId)) _conversation.Add(_pm);
+                var ctx = await Renderer.ContextAsync(null);
+                foreach (var m in _conversation) _bodies[m.PmTextId] = Renderer.Render(m.Message, ctx);
+                // Antworten bezieht sich auf die neueste Nachricht des Gesprächspartners
+                _replyTo = _conversation.LastOrDefault(m => m.FromUserId != _user.UserId && m.FromUserId > 0 && m.FolderId != PmRepository.Sent);
             }
             else await LoadListAsync();
         }

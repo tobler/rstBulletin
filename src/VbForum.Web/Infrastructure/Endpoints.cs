@@ -216,13 +216,16 @@ public static class Endpoints
             return Results.LocalRedirect("/");
         });
 
+        // Als gelesen markieren: ein Forum/Bereich samt Unterforen, mehrere Foren (forumIds) oder ohne Angabe alle
         app.MapPost("/markread", async (HttpContext http, [FromForm] int? forumId, ThreadRepository threads, BoardCache cache) =>
         {
             var u = await http.ForumUserAsync();
             if (u.IsGuest) return Results.LocalRedirect("/login");
             var snap = await cache.GetAsync();
-            var ids = forumId is int f && snap.Forum(f) is { } root
-                ? new[] { root }.Concat(snap.Descendants(root)).Select(x => x.ForumId)
+            var several = http.Request.Form["forumIds"].Select(x => int.TryParse(x, out var i) ? snap.Forum(i) : null).OfType<Forum>().ToList();
+            var roots = forumId is int f && snap.Forum(f) is { } root ? new List<Forum> { root } : several;
+            var ids = roots.Count > 0
+                ? roots.SelectMany(r => new[] { r }.Concat(snap.Descendants(r))).Select(x => x.ForumId).Distinct()
                 : snap.Forums.Keys;
             await threads.MarkForumsReadAsync(u.UserId, ids, ForumTime.Now);
             return Back(http, forumId is int ff ? $"/forum/{ff}" : "/");

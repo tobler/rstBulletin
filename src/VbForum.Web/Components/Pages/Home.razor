@@ -45,7 +45,19 @@
             <section class="card" aria-labelledby="cat-@sec.Id">
                 <div class="card-head">
                     <h2 id="cat-@sec.Id">@sec.Title</h2>
-                    <span class="small muted">@sec.Forums.Count @(sec.Forums.Count == 1 ? "Forum" : "Foren")</span>
+                    <div class="row" style="gap:10px">
+                        <span class="small muted">@sec.Forums.Count @(sec.Forums.Count == 1 ? "Forum" : "Foren")</span>
+                        @if (!_user.IsGuest && sec.Forums.Any(f => f.Unread))
+                        {
+                            <form method="post" action="/markread" class="inline">
+                                <AntiforgeryToken />
+                                @if (sec.Id > 0) { <input type="hidden" name="forumId" value="@sec.Id" /> }
+                                else { @foreach (var f in sec.Forums) { <input type="hidden" name="forumIds" value="@f.Forum.ForumId" /> } }
+                                <input type="hidden" name="returnUrl" value="/#cat-@sec.Id" />
+                                <button type="submit" class="btn btn-sm" title="Alle Foren in „@sec.Title“ als gelesen markieren"><Icon Name="check" Size="16" />Gelesen</button>
+                            </form>
+                        }
+                    </div>
                 </div>
                 @foreach (var s in sec.Forums)
                 {

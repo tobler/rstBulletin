@@ -43,13 +43,13 @@
                 @if (!string.IsNullOrWhiteSpace(_forum.Description)) { <p>@((MarkupString)_forum.DescriptionHtml)</p> }
             </div>
             <div class="row">
-                @if (!_user!.IsGuest && !_forum.IsCategory)
+                @if (!_user!.IsGuest)
                 {
                     <form method="post" action="/markread" class="inline">
                         <AntiforgeryToken />
                         <input type="hidden" name="forumId" value="@_forum.ForumId" />
                         <input type="hidden" name="returnUrl" value="@Links.Forum(_forum)" />
-                        <button type="submit" class="btn hide-mobile">Als gelesen markieren</button>
+                        <button type="submit" class="btn" title="@(_forum.IsCategory || _forum.Children.Count > 0 ? "Dieses Forum und alle Unterforen als gelesen markieren" : "Alle Themen in diesem Forum als gelesen markieren")"><Icon Name="check" />@(_forum.IsCategory ? "Bereich als gelesen markieren" : "Als gelesen markieren")</button>
                     </form>
                 }
                 @if (_canPost)

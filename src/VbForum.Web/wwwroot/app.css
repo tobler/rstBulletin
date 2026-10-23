@@ -361,3 +361,7 @@ body:has(.admin-shell) .site-footer .container { max-width: none; }
 .announcement-body { font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
 /* Aufgeklapptes Benutzermenü nicht vom Kasten abschneiden lassen */
 .card:has(.user-menu[open]), .post:has(.user-menu[open]), .table-wrap:has(.user-menu[open]) { overflow: visible; }
+
+/* PN-Verlauf */
+.pm-msg.pm-mine { background: var(--own-bg); }
+.pm-msg.pm-current { box-shadow: 0 0 0 2px var(--accent-border); }

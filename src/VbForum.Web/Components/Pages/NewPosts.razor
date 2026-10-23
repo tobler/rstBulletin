@@ -21,6 +21,14 @@
             <a href="/new?range=24h" class="@(Range == "24h" || (_user.IsGuest && Range == null) ? "on" : "")">24 Stunden</a>
             <a href="/new?range=7d" class="@(Range == "7d" ? "on" : "")">7 Tage</a>
         </div>
+        @if (!_user.IsGuest)
+        {
+            <form method="post" action="/markread" class="inline">
+                <AntiforgeryToken />
+                <input type="hidden" name="returnUrl" value="/new" />
+                <button type="submit" class="btn"><Icon Name="check" />Alle Foren als gelesen markieren</button>
+            </form>
+        }
     </div>
 
     <section class="card">

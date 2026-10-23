@@ -39,6 +39,62 @@ public sealed class PmRepository(Db db)
             new { userId, pmId });
     }
 
+    /// <summary>„Re: AW: Betreff“ → „betreff“ – für die Zuordnung zu einem Gesprächsverlauf.</summary>
+    public static string BaseTitle(string title)
+    {
+        var t = HtmlUtil.CleanTitle(title).Trim();
+        while (true)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(t, @"^(re|aw|antw|fwd|wg)\s*(\[\d+\])?\s*:\s*", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (!m.Success) break;
+            t = t[m.Length..];
+        }
+        return t.ToLowerInvariant();
+    }
+
+    /// <summary>Empfänger-IDs aus dem serialisierten touserarray.</summary>
+    public static HashSet<long> RecipientIds(string? touserarray)
+    {
+        var ids = new HashSet<long>();
+        if (string.IsNullOrEmpty(touserarray)) return ids;
+        try
+        {
+            if (PhpUnserializer.Parse(touserarray) is Dictionary<string, object?> d)
+                foreach (var v in d.Values)
+                    if (v is Dictionary<string, object?> inner)
+                        foreach (var k in inner.Keys) if (long.TryParse(k, out var id)) ids.Add(id);
+        }
+        catch { }
+        return ids;
+    }
+
+    /// <summary>
+    /// Gesprächsverlauf zu einer Nachricht aus dem eigenen Postfach (Eingang + Gesendet): gleiche Gesprächspartner,
+    /// gleicher Betreff ohne „Re:“. Funktioniert auch für alte vB-Nachrichten.
+    /// </summary>
+    public async Task<List<PrivateMessage>> ConversationAsync(long userId, PrivateMessage pm, int limit = 50)
+    {
+        var partners = pm.FromUserId == userId ? RecipientIds(pm.ToUserArray) : new HashSet<long> { pm.FromUserId };
+        partners.Remove(userId);
+        partners.Remove(0);
+        if (partners.Count == 0) return new() { pm };
+        var baseTitle = BaseTitle(pm.Title);
+        // Vorfilter in SQL über ein Stück des Betreffs, genauer Vergleich danach
+        var words = baseTitle.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(w => w.All(ch => ch < 128 && char.IsLetterOrDigit(ch)) && w.Length >= 3).Take(2).ToList();
+        var like = words.Count == 0 ? "%" : "%" + string.Join("%", words) + "%";
+        await using var c = await db.OpenAsync();
+        var rows = await c.QueryAsync<PrivateMessage>(
+            $"""
+            SELECT {Cols} FROM {T.Pm} pm JOIN {T.PmText} t ON t.pmtextid = pm.pmtextid
+            WHERE pm.userid = @userId AND (t.fromuserid IN @partners OR t.fromuserid = @userId) AND t.title LIKE @like
+            ORDER BY t.dateline DESC LIMIT 500
+            """, new { userId, partners, like });
+        return rows.Where(m => BaseTitle(m.Title) == baseTitle &&
+                               (partners.Contains(m.FromUserId) || (m.FromUserId == userId && RecipientIds(m.ToUserArray).Overlaps(partners))))
+            .GroupBy(m => m.PmTextId).Select(g => g.First())
+            .OrderBy(m => m.Dateline).TakeLast(limit).ToList();
+    }
+
     public async Task MarkReadAsync(long userId, long pmId)
     {
         await using var c = await db.OpenAsync();
@@ -99,6 +155,9 @@ public sealed class PmRepository(Db db)
             SELECT LAST_INSERT_ID();
             """, new { textId, fromUserId, parentPmId });
         await c.ExecuteAsync($"UPDATE {T.User} SET pmtotal = pmtotal + 1 WHERE userid = @fromUserId", new { fromUserId });
+        // vB: beantwortete Nachricht bekommt messageread = 2
+        if (parentPmId > 0)
+            await c.ExecuteAsync($"UPDATE {T.Pm} SET messageread = 2 WHERE pmid = @parentPmId AND userid = @fromUserId", new { parentPmId, fromUserId });
         return sentId;
     }
 
