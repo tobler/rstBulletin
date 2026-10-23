@@ -39,7 +39,7 @@
                                     <td>@p.DurationText</td>
                                     <td class="num nowrap">@p.PriceText</td>
                                     <td class="small">@_snap.Groups.GetValueOrDefault(p.GroupId)?.DisplayTitle @(p.PrimaryGroup ? "(Hauptgruppe)" : "")</td>
-                                    <td>@if (p.Active) { <span class="pill pill-accent">Aktiv</span> } else { <span class="pill">Aus</span> }@if (p.PayMode == "rstpay") { <span class="pill" style="margin-left:4px">rstpay · @(p.RstDays >= 999999 || (p.IsLifetime && p.RstDays <= 0) ? "lebenslang" : $"{p.RstDays} Tage")</span> } else if (string.IsNullOrWhiteSpace(p.PayUrl)) { <span class="pill pill-danger" style="margin-left:4px">kein Bezahl-Link</span> }</td>
+                                    <td>@if (p.Active) { <span class="pill pill-accent">Aktiv</span> } else { <span class="pill">Aus</span> }@if (p.PayMode == "rstpay") { <span class="pill" style="margin-left:4px">rstpay · @(p.RstDays >= 999999 || (p.IsLifetime && p.RstDays <= 0) ? "lebenslang" : $"{p.RstDays} Tage")@(p.RstRebilling ? $" · Abo alle {p.EffectiveRebillingDays} Tage" : "")</span> } else if (string.IsNullOrWhiteSpace(p.PayUrl)) { <span class="pill pill-danger" style="margin-left:4px">kein Bezahl-Link</span> }</td>
                                     <td class="nowrap">
                                         @if (p.PayMode == "rstpay") { <button type="button" class="btn btn-sm btn-ghost" title="Bezahl-Link testen" @onclick="() => TestPlan(p)">Testen</button> }
                                         <button type="button" class="btn btn-sm" @onclick="() => EditPlan(p)">Bearbeiten</button>
@@ -304,6 +304,10 @@
             @if (_edit.PayMode == "rstpay")
             {
                 <label class="toggle-row">Wiederkehrende Abbuchung (rebilling)<input type="checkbox" @bind="_edit.RstRebilling" /></label>
+                @if (_edit.RstRebilling)
+                {
+                    <div class="field"><label for="m-rdays">Abstand der Folgeabbuchungen (Tage)</label><input id="m-rdays" type="number" @bind="_edit.RstRebillingDays" /><span class="hint">Parameter rebillingduration, z. B. 30. Leer/0 = wie die Laufzeit (@_edit.RstDays Tage).</span></div>
+                }
             }
             else
             {
@@ -379,7 +383,7 @@
         {
             PlanId = p.PlanId, Title = p.Title, Description = p.Description, PriceCents = p.PriceCents, Currency = p.Currency, Months = p.Months, GroupId = p.GroupId,
             PrimaryGroup = p.PrimaryGroup, PayUrl = p.PayUrl, Active = p.Active, DisplayOrder = p.DisplayOrder, Highlight = p.Highlight,
-            PayMode = p.PayMode, RstDays = p.RstDays, RstPaymentType = p.RstPaymentType, RstRebilling = p.RstRebilling,
+            PayMode = p.PayMode, RstDays = p.RstDays, RstPaymentType = p.RstPaymentType, RstRebilling = p.RstRebilling, RstRebillingDays = p.RstRebillingDays,
         };
         _price = (p.PriceCents / 100m).ToString("0.00", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
     }

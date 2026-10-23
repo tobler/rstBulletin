@@ -59,7 +59,8 @@ public sealed class Schema(Db db)
               `paymode` VARCHAR(10) NOT NULL DEFAULT 'rstpay',
               `rst_days` INT NOT NULL DEFAULT 30,
               `rst_paymenttype` INT NOT NULL DEFAULT 1,
-              `rst_rebilling` TINYINT NOT NULL DEFAULT 0
+              `rst_rebilling` TINYINT NOT NULL DEFAULT 0,
+              `rst_rebillingdays` INT NOT NULL DEFAULT 0
             ) DEFAULT CHARSET=utf8mb4;
 
             CREATE TABLE IF NOT EXISTS {Tables.OwnPayment} (
@@ -125,6 +126,7 @@ public sealed class Schema(Db db)
         await Col(Tables.OwnPlan, "rst_days", "`rst_days` INT NOT NULL DEFAULT 30");
         await Col(Tables.OwnPlan, "rst_paymenttype", "`rst_paymenttype` INT NOT NULL DEFAULT 1");
         await Col(Tables.OwnPlan, "rst_rebilling", "`rst_rebilling` TINYINT NOT NULL DEFAULT 0");
+        await Col(Tables.OwnPlan, "rst_rebillingdays", "`rst_rebillingdays` INT NOT NULL DEFAULT 0");
     }
 
     public sealed record TableInfo(string Name, string Engine, string Collation, long Rows, long DataBytes, long IndexBytes);

@@ -38,6 +38,9 @@ public sealed class PremiumService(Db db, BoardCache cache, ForumAdminService ad
         public int RstPaymentType { get; set; } = 1;
         /// <summary>rstpay: wiederkehrende Abbuchung (rebilling).</summary>
         public bool RstRebilling { get; set; }
+        /// <summary>rstpay: Abstand der Folgeabbuchungen in Tagen (rebillingduration); 0 = wie Laufzeit.</summary>
+        public int RstRebillingDays { get; set; }
+        public int EffectiveRebillingDays => RstRebillingDays > 0 ? RstRebillingDays : RstDays;
 
         public bool IsLifetime => Months == 0;
         public string PriceText => (PriceCents / 100m).ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("de-DE")) + (Currency == "EUR" ? " €" : " " + Currency);
@@ -49,7 +52,7 @@ public sealed class PremiumService(Db db, BoardCache cache, ForumAdminService ad
         CAST(planid AS SIGNED) AS PlanId, title AS Title, description AS Description, CAST(price_cents AS SIGNED) AS PriceCents, currency AS Currency,
         CAST(months AS SIGNED) AS Months, CAST(groupid AS SIGNED) AS GroupId, primarygroup <> 0 AS PrimaryGroup, payurl AS PayUrl,
         active <> 0 AS Active, CAST(displayorder AS SIGNED) AS DisplayOrder, highlight <> 0 AS Highlight,
-        paymode AS PayMode, CAST(rst_days AS SIGNED) AS RstDays, CAST(rst_paymenttype AS SIGNED) AS RstPaymentType, rst_rebilling <> 0 AS RstRebilling
+        paymode AS PayMode, CAST(rst_days AS SIGNED) AS RstDays, CAST(rst_paymenttype AS SIGNED) AS RstPaymentType, rst_rebilling <> 0 AS RstRebilling, CAST(rst_rebillingdays AS SIGNED) AS RstRebillingDays
         """;
 
     public async Task<List<Plan>> PlansAsync(bool onlyActive)
@@ -71,22 +74,22 @@ public sealed class PremiumService(Db db, BoardCache cache, ForumAdminService ad
         {
             p.PlanId, title = p.Title.Trim(), description = p.Description.Trim(), price = Math.Max(0, p.PriceCents), currency = (p.Currency ?? "EUR").Trim().ToUpperInvariant(),
             months = Math.Max(0, p.Months), p.GroupId, primary = p.PrimaryGroup ? 1 : 0, payurl = p.PayUrl.Trim(), active = p.Active ? 1 : 0, p.DisplayOrder, hl = p.Highlight ? 1 : 0,
-            mode = p.PayMode == "link" ? "link" : "rstpay", days = Math.Max(0, p.RstDays), ptype = p.RstPaymentType, rebill = p.RstRebilling ? 1 : 0,
+            mode = p.PayMode == "link" ? "link" : "rstpay", days = Math.Max(0, p.RstDays), ptype = p.RstPaymentType, rebill = p.RstRebilling ? 1 : 0, rdays = Math.Max(0, p.RstRebillingDays),
         };
         if (p.PlanId > 0)
         {
             await c.ExecuteAsync($"""
                 UPDATE {Tables.OwnPlan} SET title = @title, description = @description, price_cents = @price, currency = @currency, months = @months,
                   groupid = @GroupId, primarygroup = @primary, payurl = @payurl, active = @active, displayorder = @DisplayOrder, highlight = @hl,
-                  paymode = @mode, rst_days = @days, rst_paymenttype = @ptype, rst_rebilling = @rebill
+                  paymode = @mode, rst_days = @days, rst_paymenttype = @ptype, rst_rebilling = @rebill, rst_rebillingdays = @rdays
                 WHERE planid = @PlanId
                 """, args);
             return p.PlanId;
         }
         return await c.ExecuteScalarAsync<int>($"""
             INSERT INTO {Tables.OwnPlan} (title, description, price_cents, currency, months, groupid, primarygroup, payurl, active, displayorder, highlight,
-                paymode, rst_days, rst_paymenttype, rst_rebilling)
-            VALUES (@title, @description, @price, @currency, @months, @GroupId, @primary, @payurl, @active, @DisplayOrder, @hl, @mode, @days, @ptype, @rebill);
+                paymode, rst_days, rst_paymenttype, rst_rebilling, rst_rebillingdays)
+            VALUES (@title, @description, @price, @currency, @months, @GroupId, @primary, @payurl, @active, @DisplayOrder, @hl, @mode, @days, @ptype, @rebill, @rdays);
             SELECT LAST_INSERT_ID();
             """, args);
     }

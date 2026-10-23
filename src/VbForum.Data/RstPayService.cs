@@ -34,7 +34,9 @@ public sealed class RstPayService(Db db, BoardCache cache, PremiumService premiu
                   $"?projectid={E(s.RstPayProjectId)}&merchantid={E(s.RstPayMerchantId)}&merchantkey={E(s.RstPayMerchantKey)}" +
                   $"&amount={amount}&duration={duration}&paymenttype={plan.RstPaymentType}" +
                   $"&description={E($"{plan.Title} - Username: {u.Username}")}" +
-                  $"&rebilling={(plan.RstRebilling ? 1 : 0)}&currency={E(plan.Currency)}" +
+                  $"&rebilling={(plan.RstRebilling ? 1 : 0)}" +
+                  (plan.RstRebilling ? $"&rebillingduration={plan.EffectiveRebillingDays}" : "") +
+                  $"&currency={E(plan.Currency)}" +
                   $"&param1={u.UserId}&param2={E(u.Username)}";
         var safeUrl = url.Replace(E(s.RstPayMerchantKey), "***");
         var result = await RequestAsync(url, safeUrl, baseUrl);
