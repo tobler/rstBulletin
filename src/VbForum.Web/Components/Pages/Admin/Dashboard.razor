@@ -24,6 +24,13 @@
                     <a class="btn btn-sm" href="/admin/moderation">Zur Moderation</a>
                 </div>
             }
+            @if (VbForum.Web.Infrastructure.DbKeyRepository.UsingDatabase == false)
+            {
+                <div class="alert alert-warn">
+                    <strong>Anmelde-Schlüssel werden nicht in der Datenbank gespeichert.</strong> Nach jedem Neustart des Containers sind dann alle Benutzer abgemeldet
+                    („Angemeldet bleiben“ wirkt nicht). Ursache: @(VbForum.Web.Infrastructure.DbKeyRepository.LastError ?? "unbekannt") – meist fehlt dem Datenbank-Benutzer das Recht CREATE/INSERT für die Tabelle vbf_dpkey.
+                </div>
+            }
             @if (!_fulltext)
             {
                 <div class="alert alert-info row" style="justify-content:space-between">
@@ -84,7 +91,8 @@
 
             <section class="card card-pad small muted">
                 Datenbank: @_o.ServerVersion · Bitfelder: @(_snap!.Bits.LoadedFromDatastore ? "aus vb_datastore gelesen" : "vB-4-Standardwerte") ·
-                Volltextindex: @(_fulltext ? "vorhanden" : "fehlt") · Private Nachrichten: @ForumTime.Number(_o.Pms)
+                Volltextindex: @(_fulltext ? "vorhanden" : "fehlt") · Private Nachrichten: @ForumTime.Number(_o.Pms) ·
+                Anmelde-Schlüssel: @(VbForum.Web.Infrastructure.DbKeyRepository.UsingDatabase switch { true => $"in der Datenbank ({VbForum.Web.Infrastructure.DbKeyRepository.KeyCount})", false => "nur im Datenverzeichnis!", _ => "unbekannt" })
             </section>
         }
     </AdminShell>

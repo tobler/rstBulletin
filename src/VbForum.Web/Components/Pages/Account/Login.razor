@@ -51,7 +51,8 @@
     {
         public string Username { get; set; } = "";
         public string Password { get; set; } = "";
-        public bool Remember { get; set; } = true;
+        /// <summary>Nicht angehakte Checkboxen werden nicht mitgeschickt → Standard false, beim Aufruf (GET) vorbelegt.</summary>
+        public bool Remember { get; set; }
         public string? ReturnUrl { get; set; }
     }
 
@@ -70,6 +71,7 @@
         var s = (await Cache.GetAsync()).Settings;
         _boardName = s.BoardName;
         _allowReg = s.AllowRegistration;
+        if (HttpMethods.IsGet(HttpContext.Request.Method)) Input.Remember = true;
     }
 
     private static string SafeReturn(string? url) =>

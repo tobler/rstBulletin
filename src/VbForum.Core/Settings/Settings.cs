@@ -22,6 +22,9 @@ public sealed class BoardSettings
     public string BoardName { get; set; } = "Forum";
     public string BoardDescription { get; set; } = "";
     public string BaseUrl { get; set; } = "";
+    /// <summary>Aufrufe über andere Adressen (www/ohne www, http) per 301 auf die Basis-URL umleiten –
+    /// sonst gilt die Anmeldung (Cookie) nur für die Adresse, unter der man sich angemeldet hat.</summary>
+    public bool RedirectToBaseUrl { get; set; }
     /// <summary>Version des Logos (Bild selbst liegt in vbf_asset).</summary>
     public string LogoFile { get; set; } = "";
     /// <summary>Version des Favicons (Bild selbst liegt in vbf_asset).</summary>

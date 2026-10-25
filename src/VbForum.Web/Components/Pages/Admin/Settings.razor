@@ -8,6 +8,7 @@
 @inject TokenRepository Audit
 @inject ForumPaths Paths
 @inject AssetStore AssetDb
+@inject NavigationManager Nav
 
 <PageTitle>Einstellungen – Administration</PageTitle>
 
@@ -23,7 +24,7 @@
                 <h2 class="card-title">Allgemein</h2>
                 <div class="form-grid">
                     <div class="field"><label for="st-name">Forenname</label><input id="st-name" @bind="_s.BoardName" /></div>
-                    <div class="field"><label for="st-url">Basis-URL</label><input id="st-url" @bind="_s.BaseUrl" placeholder="https://forum.example.de" /><span class="hint">Für Links in E-Mails.</span></div>
+                    <div class="field"><label for="st-url">Basis-URL</label><input id="st-url" @bind="_s.BaseUrl" placeholder="https://forum.example.de" /><span class="hint">Für Links in E-Mails. Genau die Adresse, unter der das Forum erreichbar sein soll (z. B. mit oder ohne www).</span></div>
                     <div class="field"><label for="st-tz">Zeitzone</label><input id="st-tz" @bind="_s.TimeZone" /><span class="hint">z. B. Europe/Berlin</span></div>
                 </div>
                 <div class="field"><label for="st-desc">Beschreibung / Willkommenstext</label><input id="st-desc" @bind="_s.BoardDescription" /></div>
@@ -58,6 +59,7 @@
                 {
                     <div class="field"><label for="st-off">Wartungstext</label><textarea id="st-off" @bind="_s.OfflineMessage" rows="3"></textarea></div>
                 }
+                            <label class="toggle-row"><span>Alle Aufrufe auf die Basis-URL umleiten<br /><span class="small muted">Leitet z. B. www./ohne www. und http auf genau diese Adresse um. Wichtig für „Angemeldet bleiben“: Die Anmeldung gilt nur für die Adresse, unter der man sich angemeldet hat. Du rufst den Admin gerade über <strong>@_currentOrigin</strong> auf.</span></span><input type="checkbox" @bind="_s.RedirectToBaseUrl" /></label>
             </section>
 
             <section class="card card-pad stack">
@@ -159,6 +161,7 @@
     private string? _msg, _err, _testTo;
     private bool _busy;
     private string _logoVersion = "";
+    private string _currentOrigin = "";
 
     protected override async Task OnInitializedAsync() => await Reload();
 
@@ -168,6 +171,7 @@
         _s = snap.Settings.Clone();
         _groups = snap.Groups.Values.OrderBy(g => g.UserGroupId).ToList();
         _logoVersion = _s.LogoFile;
+        _currentOrigin = new Uri(Nav.BaseUri).GetLeftPart(UriPartial.Authority);
         _msg = _err = null;
     }
 
@@ -176,6 +180,12 @@
         _busy = true; _msg = _err = null;
         try
         {
+            if (_s!.RedirectToBaseUrl)
+            {
+                if (!Uri.TryCreate(_s.BaseUrl, UriKind.Absolute, out var b) || b.Scheme is not ("http" or "https"))
+                { _err = "Für die Umleitung bitte eine gültige Basis-URL eintragen (z. B. https://www.example.de)."; return; }
+                _s.BaseUrl = b.GetLeftPart(UriPartial.Authority);
+            }
             _s!.ThreadsPerPage = Math.Clamp(_s.ThreadsPerPage, 5, 100);
             _s.PostsPerPage = Math.Clamp(_s.PostsPerPage, 5, 100);
             try { TimeZoneInfo.FindSystemTimeZoneById(_s.TimeZone); } catch { _err = $"Unbekannte Zeitzone „{_s.TimeZone}“."; return; }

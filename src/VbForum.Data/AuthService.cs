@@ -26,7 +26,11 @@ public sealed partial class AuthService(UserRepository users, BoardCache cache, 
         if (!string.IsNullOrEmpty(u.ModernHash))
         {
             ok = VbPassword.VerifyModern(password, u.ModernHash, out var rehash);
-            if (ok && rehash) await users.SetModernHashAsync(u.UserId, VbPassword.HashModern(password));
+            if (ok && rehash)
+            {
+                await users.SetModernHashAsync(u.UserId, VbPassword.HashModern(password));
+                u = await users.GetAsync(u.UserId) ?? u; // neuer Hash → neuer Stempel im Cookie
+            }
         }
         if (!ok && VbPassword.VerifyLegacy(password, u.Password, u.Salt))
         {

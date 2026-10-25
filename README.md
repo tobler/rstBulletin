@@ -315,7 +315,10 @@ This directory contains:
    copy them to `wwwroot/images/smilies/`.
 2. **SMTP.** Configure it under *Admin › Einstellungen* and send a test mail. It is needed for registration, password
    reset and subscriptions.
-3. **Base URL.** Check it, because it is used for links in e-mails.
+3. **Base URL.** Check it, because it is used for links in e-mails. If the forum is reachable under several addresses
+   (with and without `www.`, http and https), enable *"Alle Aufrufe auf die Basis-URL umleiten"*. Login cookies are
+   bound to one host, so without the redirect users who come in via the other address appear logged out. Behind a
+   reverse proxy, the http → https part needs `X-Forwarded-Proto`.
 4. **Full-text index.** Create it under *Admin › Datenbank & Wartung*.
 
 ## Not (yet) included

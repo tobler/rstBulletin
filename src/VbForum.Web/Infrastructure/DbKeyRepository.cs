@@ -13,6 +13,11 @@ namespace VbForum.Web.Infrastructure;
 /// </summary>
 public sealed class DbKeyRepository(Db db, string fallbackDir, ILogger log) : IXmlRepository
 {
+    /// <summary>Für die Admin-Übersicht: true = Schlüssel kommen aus der Datenbank, false = nur aus dem Datenverzeichnis.</summary>
+    public static bool? UsingDatabase { get; private set; }
+    public static string? LastError { get; private set; }
+    public static int KeyCount { get; private set; }
+
     private readonly FileSystemXmlRepository _files = new(new DirectoryInfo(fallbackDir), Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
 
     public IReadOnlyCollection<XElement> GetAllElements()
@@ -23,9 +28,18 @@ public sealed class DbKeyRepository(Db db, string fallbackDir, ILogger log) : IX
                 // Schlüssel aus der Datei-Phase (vor der Einrichtung) übernehmen
                 foreach (var k in fileKeys)
                     c.Execute("INSERT IGNORE INTO `vbf_dpkey` (name, xml) VALUES (@name, @xml)", new { name = Name(k), xml = k.ToString(SaveOptions.DisableFormatting) });
-            })) return fileKeys;
+            }))
+        {
+            UsingDatabase = db.IsConfigured ? false : null;
+            KeyCount = fileKeys.Count;
+            return fileKeys;
+        }
         var rows = new List<XElement>();
-        TryDb(c => rows.AddRange(c.Query<string>("SELECT xml FROM `vbf_dpkey`").Select(XElement.Parse)));
+        if (TryDb(c => rows.AddRange(c.Query<string>("SELECT xml FROM `vbf_dpkey`").Select(XElement.Parse))))
+        {
+            UsingDatabase = true; LastError = null;
+        }
+        KeyCount = rows.Count;
         return rows;
     }
 
@@ -51,6 +65,7 @@ public sealed class DbKeyRepository(Db db, string fallbackDir, ILogger log) : IX
         }
         catch (Exception ex)
         {
+            LastError = ex.Message;
             log.LogWarning(ex, "Schlüssel konnten nicht in der Datenbank gelesen/gespeichert werden – verwende das Datenverzeichnis.");
             return false;
         }

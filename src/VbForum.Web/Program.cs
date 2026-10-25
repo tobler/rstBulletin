@@ -140,6 +140,13 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
+// Einheitliche Adresse: www/ohne www und http → Basis-URL (Anmelde-Cookies gelten nur je Adresse)
+app.Use(async (ctx, next) =>
+{
+    if (await CanonicalHost.RedirectAsync(ctx)) return;
+    await next();
+});
+
 app.MapStaticAssets();
 app.UseStaticFiles();
 app.UseAuthentication();
