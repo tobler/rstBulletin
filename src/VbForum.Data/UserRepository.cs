@@ -308,6 +308,40 @@ public sealed class UserRepository(Db db)
 
     public const string DeletedUserName = "Gelöschter User";
 
+    // ---------- Ignorier-Liste (vB: vb_usertextfield.ignorelist, Benutzer-IDs durch Leerzeichen getrennt) ----------
+
+    public async Task<HashSet<long>> IgnoreListAsync(long userId)
+    {
+        if (userId <= 0) return new();
+        await using var c = await db.OpenAsync();
+        var raw = await c.ExecuteScalarAsync<string?>($"SELECT ignorelist FROM {T.UserTextField} WHERE userid = @userId", new { userId });
+        return ParseIds(raw);
+    }
+
+    public static HashSet<long> ParseIds(string? raw) =>
+        (raw ?? "").Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => long.TryParse(x, out var i) ? i : 0).Where(i => i > 0).ToHashSet();
+
+    public async Task SetIgnoredAsync(long userId, long otherId, bool ignore)
+    {
+        var list = await IgnoreListAsync(userId);
+        if (ignore ? !list.Add(otherId) : !list.Remove(otherId)) return;
+        var value = string.Join(' ', list.OrderBy(x => x));
+        await using var c = await db.OpenAsync();
+        await c.ExecuteAsync($"INSERT IGNORE INTO {T.UserTextField} (userid) VALUES (@userId)", new { userId });
+        await c.ExecuteAsync($"UPDATE {T.UserTextField} SET ignorelist = @value WHERE userid = @userId", new { userId, value });
+    }
+
+    /// <summary>Namen zu IDs (für die Verwaltung der Ignorier-Liste).</summary>
+    public async Task<List<(long UserId, string Name)>> NamesAsync(IEnumerable<long> ids)
+    {
+        var arr = ids.Distinct().ToArray();
+        if (arr.Length == 0) return new();
+        await using var c = await db.OpenAsync();
+        return (await c.QueryAsync<(long, string)>($"SELECT CAST(userid AS SIGNED), username FROM {T.User} WHERE userid IN @arr", new { arr }))
+            .Select(x => (x.Item1, HtmlUtil.CleanTitle(x.Item2))).OrderBy(x => x.Item2, StringComparer.CurrentCultureIgnoreCase).ToList();
+    }
+
     // ---------- Persönliche Einstellungen (eigene Tabelle vbf_userpref) ----------
 
     public async Task<string?> GetPrefAsync(long userId, string name)

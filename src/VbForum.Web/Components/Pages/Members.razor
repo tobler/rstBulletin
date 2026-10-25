@@ -28,6 +28,15 @@
                     <span class="muted small">
                         @GroupTitle(_profile.UserGroupId) · Mitglied seit @ForumTime.Date(_profile.JoinDate) · @ForumTime.Number(_profile.Posts) @(_profile.Posts == 1 ? "Beitrag" : "Beiträge") · zuletzt aktiv @ForumTime.Relative(_profile.LastActivity)
                     </span>
+                    @if (_canIgnore)
+                    {
+                        <form method="post" action="/ignore/@_profile.UserId" class="inline">
+                            <AntiforgeryToken />
+                            <input type="hidden" name="action" value="@(_isIgnored ? "remove" : "add")" />
+                            <input type="hidden" name="returnUrl" value="@Links.User(_profile.UserId, _profile.DisplayName)" />
+                            <button type="submit" class="btn btn-sm btn-ghost" style="padding-left:0">@(_isIgnored ? "Nicht mehr ignorieren" : "Ignorieren")</button>
+                        </form>
+                    }
                     @if (_rep != null)
                     {
                         var (pips, sign) = ReputationService.Pips(_rep.Value.Rep);
@@ -124,7 +133,7 @@
     private ForumUser? _me;
     private UserRow? _profile;
     private (long Rep, string Level)? _rep;
-    private bool _viewerIsAdmin;
+    private bool _viewerIsAdmin, _canIgnore, _isIgnored;
     private Dictionary<string, string> _fields = new();
     private MarkupString _signature;
     private PagedResult<Post>? _posts;
@@ -143,6 +152,13 @@
             {
                 _profile = await Users.GetAsync(Id);
                 var snapR = await Cache.GetAsync();
+                var viewer = await Current.GetAsync();
+                if (_profile != null && !viewer.IsGuest && viewer.UserId != _profile.UserId)
+                {
+                    var pu = ForumUser.From(_profile, snapR);
+                    _canIgnore = !(pu.IsAdmin || pu.IsSuperMod || new Permissions(snapR).IsAnyModerator(pu));
+                    _isIgnored = (await Users.IgnoreListAsync(viewer.UserId)).Contains(_profile.UserId);
+                }
                 if (_profile != null && snapR.Settings.ReputationEnabled)
                 {
                     var sum = await Rep.SummaryAsync(_profile.UserId);

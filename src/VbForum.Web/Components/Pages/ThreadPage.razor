@@ -11,6 +11,7 @@
 @inject NavigationManager Nav
 @inject PollService Polls
 @inject ReputationService Rep
+@inject UserRepository Users
 
 <PageTitle>@(_thread?.DisplayTitle ?? "Thema") – @_snap?.Settings.BoardName</PageTitle>
 
@@ -116,6 +117,11 @@
             </div>
         }
 
+        @if (_ignoreMsg != null)
+        {
+            <div class="alert @(IgnoreQ == "staff" ? "alert-err" : "alert-ok")" role="status">@_ignoreMsg</div>
+        }
+
         @if (_poll != null)
         {
             <PollBox Poll="_poll" ThreadId="_thread.ThreadId" MyVotes="_myVotes" Voters="_pollVoters" CannotVote="@_cannotVote" CanManage="_isMod"
@@ -136,7 +142,7 @@
                     <Icon Name="search" Size="16" />
                     <label for="tq" class="sr-only">In diesem Thema suchen</label>
                     <input id="tq" name="q" type="search" value="@Q" placeholder="In diesem Thema suchen" />
-                    @if (NewestFirst) { <input type="hidden" name="order" value="desc" /> }
+                    @if (NewestFirst != _defaultDesc) { <input type="hidden" name="order" value="@(NewestFirst ? "desc" : "asc")" /> }
                 </div>
                 @if (!string.IsNullOrEmpty(Q)) { <a href="@Url(1, NewestFirst, null)" class="small">Suche aufheben</a> }
             </div>
@@ -170,7 +176,13 @@
             var ctx = _contexts[p.PostId];
             var html = Renderer.Render(p.PageText, ctx);
             var atts = _attachments.GetValueOrDefault(p.PostId, new()).Where(x => !ctx.InlinedAttachments.Contains(x.AttachmentId)).ToList();
-            <article id="post@(p.PostId)" class="post @(own ? "own" : "") @(p.Visible == 0 ? "moderated" : "") @(p.Visible == 2 ? "deleted" : "")">
+            var ignored = _ignored.Contains(p.UserId) && p.UserId > 0;
+            @if (ignored)
+            {
+                @:<details id="post@(p.PostId)" class="post-ignored">
+                <summary><Icon Name="eye" Size="14" /> Beitrag von <strong>@(a?.DisplayName ?? HtmlUtil.CleanTitle(p.Username))</strong> ausgeblendet – steht auf deiner Ignorier-Liste. <span class="link">Anzeigen</span></summary>
+            }
+            <article id="@(ignored ? $"post{p.PostId}-c" : $"post{p.PostId}")" class="post @(own ? "own" : "") @(p.Visible == 0 ? "moderated" : "") @(p.Visible == 2 ? "deleted" : "")">
                 <aside class="post-aside">
                     <Avatar UserId="p.UserId" Name="@(a?.DisplayName ?? HtmlUtil.CleanTitle(p.Username))" HasAvatar="@(a?.HasCustomAvatar > 0)" Revision="@(a?.AvatarRevision ?? 0)" Size="48" />
                     <div class="post-author">
@@ -255,6 +267,16 @@
                         {
                             <a href="/thread/@_thread.ThreadId/reply?quote=@p.PostId" class="btn btn-sm">Zitieren</a>
                         }
+                        @if (!_user.IsGuest && !own && p.UserId > 0 && !_staffIds.Contains(p.UserId))
+                        {
+                            <form method="post" action="/ignore/@p.UserId" class="inline">
+                                <AntiforgeryToken />
+                                <input type="hidden" name="action" value="@(ignored ? "remove" : "add")" />
+                                <input type="hidden" name="returnUrl" value="@($"{CurrentUrl.Split('#')[0]}#post{p.PostId}")" />
+                                <button type="submit" class="btn btn-ghost btn-sm" title="@(ignored ? "Wieder anzeigen" : "Beiträge dieses Benutzers künftig ausblenden")"
+                                        data-confirm="@(ignored ? null : $"{(a?.DisplayName ?? HtmlUtil.CleanTitle(p.Username))} ignorieren? Seine Beiträge werden dann eingeklappt und er kann dir keine privaten Nachrichten mehr schicken.")">@(ignored ? "Nicht mehr ignorieren" : "Ignorieren")</button>
+                            </form>
+                        }
                         @if (_canRate && !own && p.UserId > 0 && p.Visible == 1)
                         {
                             @if (_rated.Contains(p.PostId))
@@ -284,6 +306,10 @@
                     </div>
                 </div>
             </article>
+            @if (ignored)
+            {
+                @:</details>
+            }
         }
 
         <div class="row" style="justify-content:flex-end">
@@ -342,14 +368,18 @@
     private string? _cannotVote, _repMessage;
     private List<ReputationService.Level> _levels = new();
     private HashSet<long> _rated = new();
+    private HashSet<long> _ignored = new(), _staffIds = new();
+    private string? _ignoreMsg;
+    [SupplyParameterFromQuery(Name = "ignore")] public string? IgnoreQ { get; set; }
     private int _page = 1;
 
-    private bool NewestFirst => OrderQ == "desc";
+    private bool _defaultDesc;
+    private bool NewestFirst => OrderQ == "desc" || (OrderQ != "asc" && _defaultDesc);
     private string CurrentUrl => "/" + Nav.ToBaseRelativePath(Nav.Uri);
 
     private string Url(int page, bool desc, string? q) => Links.WithQuery(Links.Thread(_thread!), new Dictionary<string, object?>
     {
-        ["order"] = desc ? "desc" : null, ["q"] = q, ["page"] = page > 1 ? page : null
+        ["order"] = desc == _defaultDesc ? null : desc ? "desc" : "asc", ["q"] = q, ["page"] = page > 1 ? page : null
     });
 
     private string Rank(PostAuthor a)
@@ -404,6 +434,7 @@
         if (_repOn) _levels = await Rep.LevelsAsync();
         _repMessage = ReputationService.Message(RepQ, _snap.Settings);
 
+        if (!_user.IsGuest) _defaultDesc = await Users.GetPrefAsync(_user.UserId, PostOrder.Pref) == "desc";
         _page = Math.Max(1, PageQ ?? 1);
         _posts = await Posts.ListByThreadAsync(t.ThreadId, _page, _snap.Settings.PostsPerPage, NewestFirst, _isMod, _isMod, _user.UserId, Q);
         if (_page > _posts.PageCount && _posts.Total > 0)
@@ -425,6 +456,21 @@
         foreach (var a in _authors.Values)
             _signatures[a.UserId] = await Renderer.RenderSignatureAsync(a.Signature);
         if (_canRate) _rated = await Rep.RatedAsync(_user.UserId, ids);
+        if (!_user.IsGuest)
+        {
+            _ignored = await Users.IgnoreListAsync(_user.UserId);
+            // Admins, Super-Moderatoren und Moderatoren können nicht ignoriert werden (wie in vB)
+            foreach (var a in _authors.Values)
+                if (_snap.Settings.AdminGroups.Contains(a.UserGroupId) || _snap.Settings.SuperModGroups.Contains(a.UserGroupId) ||
+                    _snap.Moderators.Any(m => m.UserId == a.UserId)) _staffIds.Add(a.UserId);
+            _ignoreMsg = IgnoreQ switch
+            {
+                "added" => "Der Benutzer steht jetzt auf deiner Ignorier-Liste. Verwalten kannst du sie unter „Einstellungen & Abos“.",
+                "removed" => "Der Benutzer wurde von deiner Ignorier-Liste entfernt.",
+                "staff" => "Moderatoren und Administratoren können nicht ignoriert werden.",
+                _ => null,
+            };
+        }
 
         _subscribed = await Subs.IsSubscribedAsync(_user.UserId, t.ThreadId);
         Views.Add(t.ThreadId);

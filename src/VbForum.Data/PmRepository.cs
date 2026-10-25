@@ -218,6 +218,20 @@ public sealed class SubscriptionRepository(Db db)
             """, new { userId })).ToList();
     }
 
+    /// <summary>Abonnierte Themen mit neuen Beiträgen (für das Zähler-Badge in der Navigation).</summary>
+    public async Task<int> UnreadCountAsync(long userId, int unreadDays)
+    {
+        if (userId <= 0) return 0;
+        await using var c = await db.OpenAsync();
+        return await c.ExecuteScalarAsync<int>($"""
+            SELECT COUNT(*) FROM {T.SubscribeThread} s JOIN {T.Thread} t ON t.threadid = s.threadid
+            LEFT JOIN {T.ThreadRead} tr ON tr.threadid = s.threadid AND tr.userid = s.userid
+            LEFT JOIN {T.ForumRead} fr ON fr.forumid = t.forumid AND fr.userid = s.userid
+            WHERE s.userid = @userId AND t.visible = 1 AND t.lastpost > @since
+              AND t.lastpost > GREATEST(IFNULL(tr.readtime,0), IFNULL(fr.readtime,0))
+            """, new { userId, since = Core.Text.ForumTime.Now - unreadDays * 86400L });
+    }
+
     public async Task<bool> IsSubscribedAsync(long userId, long threadId)
     {
         if (userId == 0) return false;

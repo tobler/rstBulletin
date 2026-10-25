@@ -27,6 +27,10 @@ board can keep running in parallel until you switch over.
   ratings count half), daily limit and "spread" rule, level texts from the vB phrases, pips in the postbit and a list of
   received ratings in the user area. Admins can delete ratings. The vB values can be imported under *Admin › Einstellungen*.
 - User area: profile, avatar, password, e-mail address, private messages with a pop-up for new messages.
+- Subscribed threads on their own page (*Abos* in the navigation, with a counter for threads with new posts).
+- Ignore list (`vb_usertextfield.ignorelist`, as in vB): posts of ignored users are collapsed, and they cannot send
+  you private messages. Moderators and admins cannot be ignored.
+- Preferred post order (oldest/newest first) per user; image lightbox with paging (arrow keys, buttons, swipe).
 - Admin area:
   - Board settings, logo and SMTP.
   - Database maintenance.
@@ -324,7 +328,7 @@ This directory contains:
 ## Not (yet) included
 
 Infractions, calendar, blogs, social groups, thread prefixes, thread ratings, forum
-subscriptions, ignore list. The vB data for these is left untouched and can be supported later.
+subscriptions. The vB data for these is left untouched and can be supported later.
 
 ## License
 

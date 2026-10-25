@@ -1,5 +1,5 @@
 @{ var t = Thread; var pages = (int)((t.ReplyCount + PostsPerPage) / PostsPerPage); }
-<div class="thread-row @(t.IsSticky ? "sticky" : "") @(t.IsModerated ? "moderated" : "") @(t.IsDeleted ? "deleted" : "")">
+<div class="thread-row @(t.IsSticky ? "sticky" : "") @(t.IsModerated ? "moderated" : "") @(t.IsDeleted ? "deleted" : "") @(t.IsUnread ? "is-unread" : "is-read")">
     <div class="thread-main">
         <Avatar UserId="t.PostUserId" Name="@HtmlUtil.CleanTitle(t.PostUsername)" Size="36" />
         <div class="stack" style="gap:3px;min-width:0">
@@ -10,7 +10,7 @@
                 @if (t.PollId > 0 && !t.IsRedirect) { <span class="pill" title="Thema mit Umfrage"><Icon Name="bar" Size="12" /> Umfrage</span> }
                 @if (t.IsModerated) { <span class="pill pill-accent">Wartet auf Freigabe</span> }
                 @if (t.IsDeleted) { <span class="pill pill-danger">Gelöscht</span> }
-                @if (t.IsUnread) { <a href="/thread/@t.ThreadId/unread" title="Zum ersten ungelesenen Beitrag" class="dot" aria-label="Ungelesen – zum ersten neuen Beitrag"></a> }
+                @if (t.IsUnread) { <a href="/thread/@t.ThreadId/unread" title="Zum ersten ungelesenen Beitrag" class="new-badge" aria-label="Ungelesen – zum ersten neuen Beitrag">NEU</a> }
                 <a href="@(t.IsRedirect ? $"/thread/{t.PollId}" : Links.Thread(t))" class="thread-title @(t.IsUnread ? "unread" : "")">@t.DisplayTitle</a>
                 @if (t.Attach > 0) { <span title="Mit Anhängen" class="muted"><Icon Name="paperclip" Size="15" /></span> }
             </div>

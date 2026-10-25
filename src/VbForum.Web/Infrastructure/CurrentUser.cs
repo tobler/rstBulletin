@@ -42,6 +42,9 @@ public static class AuthSetup
         var id = new ClaimsIdentity(new[]
         {
             new Claim(ForumClaims.UserId, userId.ToString()),
+            // Eindeutige Kennung für Antiforgery: ohne sie bildet ASP.NET den Schlüssel aus ALLEN Claims – inklusive des
+            // Prüfzeitpunkts, der sich alle 5 Minuten ändert. Formulare, die länger offen waren, scheiterten dann mit 400.
+            new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
             new Claim(ClaimTypes.Name, username),
             new Claim(ForumClaims.Stamp, stamp),
             new Claim(ForumClaims.Checked, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString()),

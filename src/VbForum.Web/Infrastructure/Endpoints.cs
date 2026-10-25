@@ -182,6 +182,12 @@ public static class Endpoints
             var mod = f != null && perms.IsModerator(u, f);
             var pos = await posts.PositionAsync(p, mod);
             var size = snap.Settings.PostsPerPage;
+            // Wer „Neueste zuerst“ eingestellt hat, findet den Beitrag von hinten gezählt
+            if (!u.IsGuest && await http.RequestServices.GetRequiredService<UserRepository>().GetPrefAsync(u.UserId, PostOrder.Pref) == "desc")
+            {
+                var total = t.ReplyCount + 1 + (mod ? t.HiddenCount + t.DeletedCount : 0);
+                pos = Math.Max(1, total - pos + 1);
+            }
             var page = (int)Math.Max(1, (pos + size - 1) / size);
             return Results.Redirect($"/thread/{t.ThreadId}/{t.Slug}{(page > 1 ? $"?page={page}" : "")}#post{id}");
         });
@@ -379,6 +385,31 @@ public static class Endpoints
         }).DisableAntiforgery();
 
         // Darstellung: hell / dunkel / automatisch – Cookie + beim Benutzer speichern
+        // ---------- Ignorier-Liste ----------
+
+        app.MapPost("/ignore/{userId:long}", async (long userId, HttpContext http, [FromForm] string? action, [FromForm] string? name,
+            UserRepository users, BoardCache cache) =>
+        {
+            var u = await http.ForumUserAsync();
+            if (u.IsGuest) return Results.LocalRedirect("/login");
+            var target = userId > 0 ? await users.GetAsync(userId) : !string.IsNullOrWhiteSpace(name) ? await users.GetByNameAsync(name.Trim()) : null;
+            string code;
+            if (target == null) code = "notfound";
+            else if (action == "remove") { await users.SetIgnoredAsync(u.UserId, target.UserId, false); code = "removed"; }
+            else if (target.UserId == u.UserId) code = "self";
+            else
+            {
+                var snap = await cache.GetAsync();
+                var tu = ForumUser.From(target, snap);
+                if (tu.IsAdmin || tu.IsSuperMod || new Permissions(snap).IsAnyModerator(tu)) code = "staff";
+                else { await users.SetIgnoredAsync(u.UserId, target.UserId, true); code = "added"; }
+            }
+            var back = http.Request.Form.TryGetValue("returnUrl", out var r) && r.ToString() is { } ru && ru.StartsWith('/') && !ru.StartsWith("//") ? ru : "/account/subscriptions";
+            var hash = back.IndexOf('#'); var frag = hash >= 0 ? back[hash..] : ""; if (hash >= 0) back = back[..hash];
+            back = System.Text.RegularExpressions.Regex.Replace(back, @"([?&])ignore=[^&]*&?", "$1").TrimEnd('?', '&');
+            return Results.LocalRedirect($"{back}{(back.Contains('?') ? '&' : '?')}ignore={code}{frag}");
+        });
+
         // ---------- Umfragen ----------
 
         app.MapPost("/poll/{threadId:long}/vote", async (long threadId, HttpContext http, ThreadRepository threads, PollService polls, BoardCache cache) =>
@@ -448,6 +479,14 @@ public static class Endpoints
                 await audit.LogAsync(u, "reputation.delete", $"#{r.ReputationId} Beitrag {r.PostId} an {r.UserId}: {r.Reputation}", http.ClientIp());
             }
             return Back(http, "/account/reputation");
+        });
+
+        app.MapPost("/prefs/postorder", async (HttpContext http, [FromForm] string? order, UserRepository users) =>
+        {
+            var u = await http.ForumUserAsync();
+            if (u.IsGuest) return Results.LocalRedirect("/login");
+            await users.SetPrefAsync(u.UserId, PostOrder.Pref, order == "desc" ? "desc" : null);
+            return Back(http, "/account/subscriptions");
         });
 
         app.MapPost("/theme", async (HttpContext http, [FromForm] string? theme, UserRepository users) =>

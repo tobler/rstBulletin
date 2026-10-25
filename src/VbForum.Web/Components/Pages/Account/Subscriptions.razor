@@ -25,6 +25,18 @@
             <p class="small muted" style="margin:0">Wird in deinem Konto gespeichert und gilt auf allen Geräten, auf denen du angemeldet bist.</p>
         </form>
 
+        <form method="post" action="/prefs/postorder" class="card card-pad stack" style="gap:8px" data-enhance="false">
+            <AntiforgeryToken />
+            <input type="hidden" name="returnUrl" value="/account/subscriptions?saved=order" />
+            <h2 class="card-title">Reihenfolge der Beiträge in Themen</h2>
+            <div class="row" style="gap:16px;flex-wrap:wrap">
+                <label class="check"><input type="radio" name="order" value="asc" checked="@(!_orderDesc)" data-autosubmit />Älteste zuerst</label>
+                <label class="check"><input type="radio" name="order" value="desc" checked="@_orderDesc" data-autosubmit />Neueste zuerst</label>
+            </div>
+            <noscript><button type="submit" class="btn btn-sm">Übernehmen</button></noscript>
+            <p class="small muted" style="margin:0">Gilt für alle Themen. Im Thema selbst kannst du weiterhin jederzeit umschalten.</p>
+        </form>
+
         <EditForm Model="Settings" FormName="notify" OnSubmit="SaveAsync" class="card card-pad stack" style="gap:4px" Enhance>
             <h2 class="card-title" style="margin-bottom:10px">Benachrichtigungen</h2>
             @* Sorgt dafür, dass das Formular auch ohne gesetzte Häkchen ankommt *@
@@ -37,36 +49,39 @@
             <div class="form-actions" style="margin-top:12px"><button type="submit" class="btn btn-primary">Speichern</button></div>
         </EditForm>
 
-        <section class="card">
-            <div class="card-head"><h2>Abonnierte Themen</h2><span class="small muted">@_subs.Count</span></div>
-            @foreach (var s in _subs)
+        <section class="card card-pad stack" style="gap:8px">
+            <div class="row" style="justify-content:space-between">
+                <h2 class="card-title" style="margin:0">Abonnierte Themen</h2>
+                <a class="btn btn-sm btn-primary" href="/subscriptions">Abos anzeigen (@_subCount)</a>
+            </div>
+            <p class="small muted" style="margin:0">Deine abonnierten Themen findest du jetzt direkt oben in der Navigation unter „Abos“.</p>
+        </section>
+
+        <section class="card card-pad stack" style="gap:10px" id="ignorieren">
+            <h2 class="card-title" style="margin:0">Ignorier-Liste</h2>
+            <p class="small muted" style="margin:0">Beiträge dieser Benutzer werden eingeklappt, und sie können dir keine privaten Nachrichten schicken.</p>
+            @if (_ignoreMsg != null) { <div class="alert @(IgnoreQ is "added" or "removed" ? "alert-ok" : "alert-err")">@_ignoreMsg</div> }
+            @foreach (var (id, name) in _ignored)
             {
-                <div class="thread-row">
-                    <div class="thread-main">
-                        <div class="stack" style="gap:2px;min-width:0">
-                            <div class="thread-title-line">
-                                @if (s.HasNew) { <span class="dot" title="Neue Beiträge"></span> }
-                                <a href="/thread/@s.ThreadId/unread" class="thread-title @(s.HasNew ? "unread" : "")">@s.DisplayTitle</a>
-                                @if (s.EmailUpdate > 0) { <span class="pill" title="Bei neuen Antworten kommt eine E-Mail">E-Mail</span> }
-                            </div>
-                            <span class="thread-sub">Letzte Antwort von @HtmlUtil.CleanTitle(s.LastPoster) · @ForumTime.Relative(s.LastPost)</span>
-                        </div>
-                    </div>
-                    <form method="post" action="/thread/@s.ThreadId/subscribe" class="inline">
+                <div class="row" style="justify-content:space-between;border-top:1px solid var(--border);padding-top:8px">
+                    <a href="@Links.User(id, name)">@name</a>
+                    <form method="post" action="/ignore/@id" class="inline">
                         <AntiforgeryToken />
-                        <input type="hidden" name="mode" value="@(s.EmailUpdate > 0 ? "silent" : "email")" />
-                        <input type="hidden" name="returnUrl" value="/account/subscriptions" />
-                        <button type="submit" class="btn btn-sm btn-ghost">@(s.EmailUpdate > 0 ? "Ohne E-Mail" : "Mit E-Mail")</button>
-                    </form>
-                    <form method="post" action="/thread/@s.ThreadId/subscribe" class="inline">
-                        <AntiforgeryToken />
-                        <input type="hidden" name="mode" value="off" />
-                        <input type="hidden" name="returnUrl" value="/account/subscriptions" />
-                        <button type="submit" class="btn btn-sm">Abo beenden</button>
+                        <input type="hidden" name="action" value="remove" />
+                        <input type="hidden" name="returnUrl" value="/account/subscriptions#ignorieren" />
+                        <button type="submit" class="btn btn-sm">Entfernen</button>
                     </form>
                 </div>
             }
-            @if (_subs.Count == 0) { <div class="empty">Du hast noch keine Themen abonniert.</div> }
+            @if (_ignored.Count == 0) { <p class="muted" style="margin:0">Du ignorierst niemanden.</p> }
+            <form method="post" action="/ignore/0" class="row" style="gap:8px">
+                <AntiforgeryToken />
+                <input type="hidden" name="action" value="add" />
+                <input type="hidden" name="returnUrl" value="/account/subscriptions#ignorieren" />
+                <label for="ign-name" class="sr-only">Benutzername</label>
+                <input id="ign-name" class="input" name="name" placeholder="Benutzername" style="flex:1 1 200px" required />
+                <button type="submit" class="btn btn-sm">Ignorieren</button>
+            </form>
         </section>
     </AccountShell>
 </main>
@@ -79,7 +94,12 @@
     private bool _loaded, _smtp;
     private string? _theme;
     private ForumUser? _user;
-    private List<Subscription> _subs = new();
+    private int _subCount;
+    private bool _orderDesc;
+    [SupplyParameterFromQuery(Name = "saved")] public string? SavedQ { get; set; }
+    private List<(long UserId, string Name)> _ignored = new();
+    private string? _ignoreMsg;
+    [SupplyParameterFromQuery(Name = "ignore")] public string? IgnoreQ { get; set; }
     private string? _message;
 
     protected override async Task OnInitializedAsync()
@@ -97,7 +117,19 @@
                 Settings = new NotifyInput { AutoSubscribe = row!.AutoSubscribe >= 0, Email = email, PmPopup = row.PmPopup != 0,
                     PmEmail = (row.Options & UserRepository.OptionEmailOnPm) != 0 };
             }
-            _subs = await Subs.ListAsync(_user.UserId);
+            _subCount = (await Subs.ListAsync(_user.UserId)).Count;
+            _orderDesc = await Users.GetPrefAsync(_user.UserId, VbForum.Web.Infrastructure.PostOrder.Pref) == "desc";
+            if (SavedQ == "order") _message = "Reihenfolge gespeichert.";
+            _ignored = await Users.NamesAsync(await Users.IgnoreListAsync(_user.UserId));
+            _ignoreMsg = IgnoreQ switch
+            {
+                "added" => "Benutzer wird jetzt ignoriert.",
+                "removed" => "Benutzer von der Liste entfernt.",
+                "notfound" => "Diesen Benutzer gibt es nicht.",
+                "self" => "Dich selbst kannst du nicht ignorieren.",
+                "staff" => "Moderatoren und Administratoren können nicht ignoriert werden.",
+                _ => null,
+            };
             _theme = VbForum.Web.Infrastructure.Theme.Normalize(await Users.GetPrefAsync(_user.UserId, VbForum.Web.Infrastructure.Theme.Pref));
         }
         finally { _loaded = true; }
@@ -109,7 +141,6 @@
         await Users.SetAutoSubscribeAsync(_user!.UserId, !Settings!.AutoSubscribe ? -1 : Settings.Email ? 1 : 0);
         // E-Mail-Einstellung auf alle bestehenden Abos übertragen (vorher galt sie nur für neue)
         await Subs.SetAllEmailAsync(_user.UserId, Settings.Email);
-        _subs = await Subs.ListAsync(_user.UserId);
         await Users.SetPmPopupAsync(_user.UserId, Settings.PmPopup);
         await Users.SetOptionAsync(_user.UserId, UserRepository.OptionEmailOnPm, Settings.PmEmail);
         _message = "Einstellungen gespeichert.";

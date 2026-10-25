@@ -1,0 +1,89 @@
+@page "/subscriptions"
+@attribute [Authorize]
+@inject CurrentUser Current
+@inject BoardCache Cache
+@inject SubscriptionRepository Subs
+
+<PageTitle>Abonnierte Themen – @_snap?.Settings.BoardName</PageTitle>
+
+@if (!_loaded) { return; }
+<main class="page container">
+    <div class="page-head">
+        <div>
+            <h1>Abonnierte Themen</h1>
+            <p>@_all.Count @(_all.Count == 1 ? "Thema" : "Themen") · @_newCount mit neuen Beiträgen</p>
+        </div>
+        <div class="seg" role="group" aria-label="Filter">
+            <a href="/subscriptions" class="@(!OnlyNew ? "on" : "")">Alle</a>
+            <a href="/subscriptions?new=1" class="@(OnlyNew ? "on" : "")">Nur neue</a>
+        </div>
+    </div>
+
+    <section class="card">
+        @foreach (var s in _list)
+        {
+            var f = _snap!.Forum(s.ForumId);
+            <div class="thread-row @(s.HasNew ? "is-unread" : "")">
+                <div class="thread-main">
+                    <div class="stack" style="gap:3px;min-width:0">
+                        <div class="thread-title-line">
+                            @if (s.HasNew) { <a href="/thread/@s.ThreadId/unread" class="new-badge" title="Zum ersten ungelesenen Beitrag">NEU</a> }
+                            <a href="/thread/@s.ThreadId/unread" class="thread-title @(s.HasNew ? "unread" : "")">@s.DisplayTitle</a>
+                            @if (s.EmailUpdate > 0) { <span class="pill" title="Bei neuen Antworten kommt eine E-Mail">E-Mail</span> }
+                        </div>
+                        <span class="thread-sub">
+                            @if (f != null) { <a href="@Links.Forum(f)">@f.DisplayTitle</a><text> · </text> }
+                            Letzte Antwort von @HtmlUtil.CleanTitle(s.LastPoster) · @ForumTime.Relative(s.LastPost) · @ForumTime.Number(s.ReplyCount) Antworten
+                        </span>
+                    </div>
+                </div>
+                <div class="row" style="gap:6px;flex-wrap:nowrap">
+                    <form method="post" action="/thread/@s.ThreadId/subscribe" class="inline">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="mode" value="@(s.EmailUpdate > 0 ? "silent" : "email")" />
+                        <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+                        <button type="submit" class="btn btn-sm btn-ghost" title="@(s.EmailUpdate > 0 ? "Keine E-Mails mehr zu diesem Thema" : "E-Mail bei neuen Antworten")">@(s.EmailUpdate > 0 ? "Ohne E-Mail" : "Mit E-Mail")</button>
+                    </form>
+                    <form method="post" action="/thread/@s.ThreadId/subscribe" class="inline">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="mode" value="off" />
+                        <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+                        <button type="submit" class="btn btn-sm">Abo beenden</button>
+                    </form>
+                </div>
+            </div>
+        }
+        @if (_list.Count == 0)
+        {
+            <div class="empty">@(OnlyNew ? "Keine neuen Beiträge in deinen abonnierten Themen." : "Du hast noch keine Themen abonniert. Im Thema oben auf „Abonnieren“ klicken.")</div>
+        }
+    </section>
+    <p class="small muted">E-Mail-Benachrichtigungen insgesamt ein- oder ausschalten: <a href="/account/subscriptions">Einstellungen &amp; Abos</a></p>
+</main>
+
+@code {
+    [SupplyParameterFromQuery(Name = "new")] public int? NewQ { get; set; }
+    private bool OnlyNew => NewQ == 1;
+    private string ReturnUrl => OnlyNew ? "/subscriptions?new=1" : "/subscriptions";
+    private BoardSnapshot? _snap;
+    private List<Subscription> _all = new(), _list = new();
+    private int _newCount;
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _snap = await Cache.GetAsync();
+            var u = await Current.GetAsync();
+            var readable = new Permissions(_snap).ReadableForumIds(u);
+            var since = ForumTime.Now - _snap.Settings.UnreadDays * 86400L;
+            _all = (await Subs.ListAsync(u.UserId)).Where(s => readable.Contains(s.ForumId)).ToList();
+            // „Neu“ wie in der Navigation: nur innerhalb des Ungelesen-Zeitraums
+            foreach (var s in _all.Where(s => s.LastPost <= since)) s.ReadTime = Math.Max(s.ReadTime, s.LastPost);
+            _newCount = _all.Count(s => s.HasNew);
+            _list = OnlyNew ? _all.Where(s => s.HasNew).ToList() : _all;
+        }
+        finally { _loaded = true; }
+    }
+}

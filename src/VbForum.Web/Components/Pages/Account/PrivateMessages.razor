@@ -198,6 +198,9 @@
             if (u == null) { _error = $"Benutzer „{name}“ nicht gefunden."; return; }
             var quota = snap.Groups.GetValueOrDefault(u.UserGroupId)?.PmQuota ?? 0;
             if (quota > 0 && u.PmTotal >= quota && !_user.IsAdmin) { _error = $"Das Postfach von {u.DisplayName} ist voll."; return; }
+            // Wer ignoriert wird, kann keine Nachrichten schicken (Moderatoren und Admins schon)
+            if (!_user.IsAdmin && !_user.IsSuperMod && (await Users.IgnoreListAsync(u.UserId)).Contains(_user.UserId))
+            { _error = $"{u.DisplayName} nimmt keine privaten Nachrichten von dir an."; return; }
             recipients.Add(new PmRepository.Recipient(u.UserId, u.DisplayName, u.PmTotal, quota));
         }
         if (recipients.Count == 0) { _error = "Bitte mindestens einen Empfänger angeben."; return; }

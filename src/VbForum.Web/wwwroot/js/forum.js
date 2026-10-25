@@ -1,27 +1,75 @@
 // Kleine Helfer – kein Framework nötig.
 (function () {
-  // Bild-Lightbox für Anhänge
+  // Bild-Lightbox für Anhänge: blättern mit Pfeiltasten, Buttons oder Wischen; alle Bilder der Seite in Reihenfolge
   document.addEventListener('click', function (e) {
     var a = e.target.closest && e.target.closest('a[data-lightbox]');
-    if (a) {
+    if (a && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
       e.preventDefault();
-      var box = document.createElement('div');
-      box.className = 'lightbox';
-      box.setAttribute('role', 'dialog');
-      box.setAttribute('aria-label', 'Bildansicht');
-      var img = document.createElement('img');
-      img.src = a.getAttribute('href');
-      img.alt = '';
-      box.appendChild(img);
-      box.addEventListener('click', function () { box.remove(); });
-      document.addEventListener('keydown', function esc(ev) { if (ev.key === 'Escape') { box.remove(); document.removeEventListener('keydown', esc); } });
-      document.body.appendChild(box);
+      openLightbox(a);
       return;
     }
     // Bestätigung für gefährliche Aktionen
     var c = e.target.closest && e.target.closest('[data-confirm]');
     if (c && !confirm(c.getAttribute('data-confirm'))) { e.preventDefault(); e.stopPropagation(); }
   }, true);
+
+  function openLightbox(start) {
+    var links = Array.prototype.slice.call(document.querySelectorAll('a[data-lightbox]'));
+    var seen = {}, list = [];
+    links.forEach(function (l) { var h = l.getAttribute('href'); if (!seen[h]) { seen[h] = true; list.push(l); } });
+    var idx = Math.max(0, list.findIndex(function (l) { return l.getAttribute('href') === start.getAttribute('href'); }));
+    var old = document.querySelector('.lightbox'); if (old) old.remove();
+
+    var box = document.createElement('div');
+    box.className = 'lightbox';
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-modal', 'true');
+    box.setAttribute('aria-label', 'Bildansicht');
+    var img = document.createElement('img'); img.alt = '';
+    var cap = document.createElement('div'); cap.className = 'lightbox-cap';
+    function btn(cls, label, text) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'lightbox-btn ' + cls;
+      b.setAttribute('aria-label', label); b.title = label; b.textContent = text; return b;
+    }
+    var prev = btn('lb-prev', 'Vorheriges Bild (←)', '‹'), next = btn('lb-next', 'Nächstes Bild (→)', '›'), close = btn('lb-close', 'Schließen (Esc)', '×');
+    box.appendChild(img); box.appendChild(cap); box.appendChild(close);
+    if (list.length > 1) { box.appendChild(prev); box.appendChild(next); }
+
+    function show(i) {
+      idx = (i + list.length) % list.length;
+      var l = list[idx];
+      img.src = l.getAttribute('href');
+      var t = l.getAttribute('title') || (l.querySelector('img') && l.querySelector('img').getAttribute('alt')) || '';
+      cap.textContent = (list.length > 1 ? (idx + 1) + ' / ' + list.length + (t ? ' · ' : '') : '') + t;
+      cap.hidden = !cap.textContent;
+      // Nachbarn vorladen
+      [idx + 1, idx - 1].forEach(function (j) { var n = list[(j + list.length) % list.length]; if (n) { var p = new Image(); p.src = n.getAttribute('href'); } });
+    }
+    function shut() { box.remove(); document.removeEventListener('keydown', keys, true); if (start.focus) start.focus({ preventScroll: true }); }
+    function keys(ev) {
+      if (ev.key === 'Escape') { ev.preventDefault(); shut(); }
+      else if (ev.key === 'ArrowRight' && list.length > 1) { ev.preventDefault(); show(idx + 1); }
+      else if (ev.key === 'ArrowLeft' && list.length > 1) { ev.preventDefault(); show(idx - 1); }
+    }
+    prev.addEventListener('click', function (ev) { ev.stopPropagation(); show(idx - 1); });
+    next.addEventListener('click', function (ev) { ev.stopPropagation(); show(idx + 1); });
+    close.addEventListener('click', function (ev) { ev.stopPropagation(); shut(); });
+    // Klick aufs Bild: weiter (bei mehreren), Klick daneben: schließen
+    img.addEventListener('click', function (ev) { ev.stopPropagation(); if (list.length > 1) show(idx + 1); else shut(); });
+    box.addEventListener('click', function () { shut(); });
+    // Wischen auf Touch-Geräten
+    var x0 = null, y0 = null;
+    box.addEventListener('touchstart', function (ev) { if (ev.touches.length === 1) { x0 = ev.touches[0].clientX; y0 = ev.touches[0].clientY; } }, { passive: true });
+    box.addEventListener('touchend', function (ev) {
+      if (x0 === null || list.length < 2) return;
+      var dx = ev.changedTouches[0].clientX - x0, dy = ev.changedTouches[0].clientY - y0; x0 = null;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) show(idx + (dx < 0 ? 1 : -1));
+    });
+    document.addEventListener('keydown', keys, true);
+    document.body.appendChild(box);
+    show(idx);
+    close.focus({ preventScroll: true });
+  }
 
   // Auswahllisten, die das Formular sofort absenden (Sortierung etc.)
   document.addEventListener('change', function (e) {

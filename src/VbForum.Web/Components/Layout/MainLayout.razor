@@ -2,6 +2,7 @@
 @inject CurrentUser Current
 @inject BoardCache Cache
 @inject NavigationManager Nav
+@inject SubscriptionRepository Subs
 
 <a href="#main" class="sr-only">Zum Inhalt springen</a>
 <header class="site-header">
@@ -20,6 +21,10 @@
         <nav class="nav" aria-label="Hauptnavigation">
             <a href="/" class="@Active("")">Foren</a>
             <a href="/new" class="@Active("new")">Neue Beiträge</a>
+            @if (_user != null && !_user.IsGuest)
+            {
+                <a href="/subscriptions" class="@Active("subscriptions")"><span>Abos</span>@if (_subUnread > 0) { <span class="count" title="@_subUnread abonnierte Themen mit neuen Beiträgen">@_subUnread</span> }</a>
+            }
             <a href="/members" class="@Active("members")">Mitglieder</a>
             @if (_user?.IsAdmin == true)
             {
@@ -91,6 +96,7 @@
     private ForumUser? _user;
     private BoardSettings? _settings;
     private bool _isMod;
+    private int _subUnread;
 
     protected override async Task OnInitializedAsync()
     {
@@ -100,6 +106,7 @@
             _settings = snap.Settings;
             _user = await Current.GetAsync();
             _isMod = new Permissions(snap).IsAnyModerator(_user);
+            if (!_user.IsGuest) _subUnread = await Subs.UnreadCountAsync(_user.UserId, snap.Settings.UnreadDays);
         }
         catch
         {
