@@ -115,6 +115,8 @@ public sealed class Post
     public string IpAddress { get; set; } = "";
     public int Visible { get; set; }
     public int Attach { get; set; }
+    /// <summary>vB: 1 = Ermahnung, 2 = Verwarnung zu diesem Beitrag.</summary>
+    public int Infraction { get; set; }
 
     // aus editlog
     public string? EditUsername { get; set; }

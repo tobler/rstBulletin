@@ -1,0 +1,280 @@
+@page "/mod/user/{Id:long}"
+@page "/mod/user"
+@attribute [Authorize(Policy = "Moderator")]
+@rendermode InteractiveServer
+@inject BoardCache Cache
+@inject CurrentUser Current
+@inject UserRepository Users
+@inject PostRepository Posts
+@inject ThreadRepository Threads
+@inject InfractionService Infractions
+@inject PmRepository Pms
+@inject TokenRepository Audit
+@inject NavigationManager Nav
+
+<PageTitle>Benutzer maßregeln – Moderation</PageTitle>
+
+<main class="page container">
+    <AdminShell Active="infractions" Title="@(_target == null ? "Benutzer maßregeln" : $"{_target.DisplayName} maßregeln")" Subtitle="Ermahnen, verwarnen, sperren">
+        @if (!_loaded) { }
+        else if (_error != null && _target == null)
+        {
+            <div class="alert alert-err">@_error</div>
+            <p><a class="btn" href="/mod/infractions">Zurück</a></p>
+        }
+        else if (_target != null)
+        {
+            @if (_msg != null) { <div class="alert alert-ok" role="status">@_msg</div> }
+            @if (_error != null) { <div class="alert alert-err" role="alert">@_error</div> }
+
+            <section class="card card-pad row" style="gap:16px;align-items:center">
+                <Avatar UserId="_target.UserId" Name="@_target.DisplayName" HasAvatar="_target.HasCustomAvatar > 0" Revision="_target.AvatarRevision" Size="56" />
+                <div class="stack" style="gap:2px;flex:1;min-width:0">
+                    <strong style="font-size:18px"><a href="@Links.User(_target.UserId, _target.DisplayName)">@_target.DisplayName</a></strong>
+                    <span class="small muted">
+                        @(_snap!.Groups.TryGetValue(_target.UserGroupId, out var g) ? HtmlUtil.CleanTitle(g.Title) : $"Gruppe {_target.UserGroupId}") ·
+                        @ForumTime.Number(_target.Posts) Beiträge · dabei seit @ForumTime.Date(_target.JoinDate)
+                    </span>
+                    <span class="small">
+                        <strong>@_sum!.Points</strong> aktive Punkte · @_sum.Infractions Verwarnungen · @_sum.Warnings Ermahnungen
+                        @if (_ban != null) { <span class="pill pill-danger" style="margin-left:6px">gesperrt@(_ban.Value.LiftDate > 0 ? $" bis {ForumTime.Full(_ban.Value.LiftDate)}" : " (dauerhaft)")</span> }
+                    </span>
+                </div>
+                @if (_me!.IsAdmin) { <a class="btn btn-sm" href="/admin/users/@_target.UserId">Benutzer bearbeiten</a> }
+            </section>
+
+            @if (_blocked != null)
+            {
+                <div class="alert alert-info">@_blocked</div>
+            }
+            else
+            {
+                @if (_canWarn)
+                {
+                    <section class="card card-pad stack" id="verwarnen" style="gap:12px">
+                        <h2 class="card-title" style="margin:0">Ermahnen oder verwarnen</h2>
+                        @if (_post != null)
+                        {
+                            <div class="small" style="border-left:3px solid var(--border);padding-left:10px">
+                                <span class="muted">Zum Beitrag <a href="/post/@_post.PostId" target="_blank">#@_post.PostId</a> vom @ForumTime.Full(_post.Dateline):</span><br />
+                                <span>@HtmlUtil.PlainText(_post.PageText, 280)</span>
+                            </div>
+                        }
+                        <fieldset class="stack" style="gap:6px;border:0;padding:0;margin:0">
+                            <legend class="small" style="font-weight:600;margin-bottom:4px">Grund</legend>
+                            @foreach (var l in _levels)
+                            {
+                                <label class="poll-choice">
+                                    <input type="radio" name="lvl" checked="@(_req.LevelId == l.InfractionLevelId)" @onchange="() => _req.LevelId = l.InfractionLevelId" />
+                                    <span style="flex:1">@l.Title</span>
+                                    <span class="small muted">@(l.IsWarning ? "Ermahnung · keine Punkte" : $"{l.Points} Punkte · {l.DurationText}")</span>
+                                </label>
+                            }
+                            <label class="poll-choice">
+                                <input type="radio" name="lvl" checked="@(_req.LevelId == 0)" @onchange="() => _req.LevelId = 0" />
+                                <span style="flex:1">Eigener Grund …</span>
+                            </label>
+                        </fieldset>
+                        @if (_req.LevelId == 0)
+                        {
+                            <div class="form-grid">
+                                <div class="field" style="grid-column:1/-1"><label for="i-r">Grund</label><input id="i-r" @bind="_req.CustomReason" maxlength="250" placeholder="z. B. Beleidigung" /></div>
+                                <div class="field"><label for="i-p">Punkte</label><input id="i-p" type="number" min="0" max="1000" @bind="_req.CustomPoints" /><span class="hint">0 = Ermahnung (ohne Punkte)</span></div>
+                                <div class="field"><label for="i-d">Punkte verfallen nach (Tagen)</label><input id="i-d" type="number" min="0" @bind="_req.CustomDays" /><span class="hint">0 = nie</span></div>
+                            </div>
+                        }
+                        <label class="toggle-row">Private Nachricht an den Benutzer schicken<input type="checkbox" @bind="_req.SendPm" /></label>
+                        @if (_req.SendPm)
+                        {
+                            <div class="field">
+                                <label for="i-m">Zusätzlicher Text für den Benutzer (optional)</label>
+                                <textarea id="i-m" rows="4" @bind="_req.Message" placeholder="Die Nachricht enthält automatisch Grund, Beitrag und Punkte."></textarea>
+                            </div>
+                        }
+                        <div class="field">
+                            <label for="i-n">Interne Notiz (nur für das Team sichtbar)</label>
+                            <input id="i-n" @bind="_req.Note" maxlength="250" />
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="GiveAsync">@(IsWarningSelected ? "Ermahnen" : "Verwarnen")</button>
+                        </div>
+                    </section>
+                }
+
+                @if (_canBan)
+                {
+                    <section class="card card-pad stack" id="sperren" style="gap:12px">
+                        <h2 class="card-title" style="margin:0">Sperren</h2>
+                        @if (_ban == null)
+                        {
+                            <div class="form-grid">
+                                <div class="field">
+                                    <label for="b-d">Dauer</label>
+                                    <select id="b-d" @bind="_banDays">
+                                        <option value="1">1 Tag</option><option value="3">3 Tage</option><option value="7">7 Tage</option><option value="14">14 Tage</option>
+                                        <option value="30">30 Tage</option><option value="90">3 Monate</option><option value="365">1 Jahr</option><option value="0">Dauerhaft</option>
+                                    </select>
+                                </div>
+                                <div class="field"><label for="b-r">Grund (sieht der Benutzer beim Anmelden)</label><input id="b-r" @bind="_banReason" maxlength="200" /></div>
+                            </div>
+                            <label class="toggle-row"><span>Zusätzlich private Nachricht schicken<br /><span class="small muted">Den Grund sieht der Benutzer ohnehin beim Anmeldeversuch.</span></span><input type="checkbox" @bind="_banPm" /></label>
+                            <div class="form-actions"><button type="button" class="btn btn-danger" disabled="@_busy" @onclick="BanAsync">Sperren</button></div>
+                        }
+                        else
+                        {
+                            <p style="margin:0">Gesperrt seit @ForumTime.Full(_ban.Value.BanDate)@(_ban.Value.LiftDate > 0 ? $" bis {ForumTime.Full(_ban.Value.LiftDate)}" : " (dauerhaft)")@(string.IsNullOrEmpty(_ban.Value.Reason) ? "" : $" – {HtmlUtil.CleanTitle(_ban.Value.Reason)}").</p>
+                            <div class="form-actions"><button type="button" class="btn" disabled="@_busy" @onclick="UnbanAsync">Sperre aufheben</button></div>
+                        }
+                    </section>
+                }
+            }
+
+            <section class="card" id="verlauf">
+                <div class="card-head"><h2>Bisherige Verwarnungen &amp; Ermahnungen</h2><span class="small muted">@_list.Count</span></div>
+                @if (_list.Count == 0) { <div class="empty">Keine.</div> }
+                @foreach (var i in _list)
+                {
+                    <div class="thread-row" style="@(i.IsActive ? "" : "opacity:.7")">
+                        <div class="stack" style="gap:3px;min-width:0;flex:1 1 360px">
+                            <div class="thread-title-line">
+                                <span class="pill @(i.IsWarning ? "" : "pill-warn")">@(i.IsWarning ? "Ermahnung" : $"Verwarnung · {i.Points} P.")</span>
+                                <strong>@i.Reason</strong>
+                                <span class="pill @(i.IsActive ? "pill-accent" : "")">@i.StatusText</span>
+                            </div>
+                            <span class="thread-sub">
+                                @ForumTime.Full(i.Dateline) von @(string.IsNullOrEmpty(i.WhoAddedName) ? "?" : HtmlUtil.CleanTitle(i.WhoAddedName))
+                                @if (i.PostId > 0) { <text> · </text><a href="/post/@i.PostId">@(string.IsNullOrEmpty(i.PostThreadTitle) ? $"Beitrag #{i.PostId}" : HtmlUtil.CleanTitle(i.PostThreadTitle))</a> }
+                                @if (i.Expires > 0 && i.IsActive) { <text> · verfällt @ForumTime.Full(i.Expires)</text> }
+                                @if (i.Action == 2) { <text> · aufgehoben von @HtmlUtil.CleanTitle(i.ActionUserName) am @ForumTime.Full(i.ActionDateline)@(string.IsNullOrWhiteSpace(i.ActionReason) || i.ActionReason == "0" ? "" : $": {HtmlUtil.CleanTitle(i.ActionReason)}")</text> }
+                            </span>
+                            @if (!string.IsNullOrWhiteSpace(i.Note)) { <span class="small"><Icon Name="lock" Size="12" /> Notiz: @HtmlUtil.CleanTitle(i.Note)</span> }
+                        </div>
+                        @if (_canWarn && i.Action != 2 && _blocked == null)
+                        {
+                            <button type="button" class="btn btn-sm" @onclick="() => ReverseAsync(i)">Aufheben</button>
+                        }
+                    </div>
+                }
+            </section>
+        }
+    </AdminShell>
+</main>
+
+@code {
+    [Parameter] public long Id { get; set; }
+    [SupplyParameterFromQuery(Name = "post")] public long? PostQ { get; set; }
+    [SupplyParameterFromQuery(Name = "name")] public string? NameQ { get; set; }
+
+    private BoardSnapshot? _snap;
+    private ForumUser? _me;
+    private UserRow? _target;
+    private Post? _post;
+    private List<InfractionService.Level> _levels = new();
+    private List<InfractionService.Infraction> _list = new();
+    private InfractionService.Summary? _sum;
+    private (long BanDate, long LiftDate, string Reason)? _ban;
+    private InfractionService.GiveRequest _req = new();
+    private bool _loaded, _busy, _canWarn, _canBan, _banPm;
+    private string? _msg, _error, _blocked;
+    private int _banDays = 7;
+    private string _banReason = "";
+
+    private bool IsWarningSelected => _req.LevelId > 0 ? _levels.FirstOrDefault(l => l.InfractionLevelId == _req.LevelId)?.IsWarning == true : _req.CustomPoints == 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _snap = await Cache.GetAsync();
+            _me = await Current.GetAsync();
+            _canWarn = InfractionService.CanWarn(_me, _snap);
+            _canBan = InfractionService.CanBan(_me, _snap);
+            if (Id == 0 && !string.IsNullOrWhiteSpace(NameQ) && await Users.GetByNameAsync(NameQ.Trim()) is { } byName) Id = byName.UserId;
+            _levels = await Infractions.LevelsAsync();
+            _req = new InfractionService.GiveRequest { UserId = Id, PostId = PostQ ?? 0, LevelId = _levels.FirstOrDefault()?.InfractionLevelId ?? 0 };
+            await LoadAsync();
+            if (_target == null) _error = string.IsNullOrWhiteSpace(NameQ) ? "Benutzer nicht gefunden." : $"Benutzer „{NameQ}“ nicht gefunden.";
+            if (_post != null && _post.UserId != Id) _post = null;
+        }
+        finally { _loaded = true; }
+    }
+
+    private async Task LoadAsync()
+    {
+        _target = Id > 0 ? await Users.GetAsync(Id) : null;
+        if (_target == null) return;
+        _sum = await Infractions.SummaryAsync(Id);
+        _list = await Infractions.ForUserAsync(Id);
+        _ban = await Users.BanInfoAsync(Id);
+        _blocked = InfractionService.CannotTarget(_me!, ForumUser.From(_target, _snap!), _snap!);
+        if (!_canWarn && !_canBan) _blocked ??= "Du darfst keine Benutzer verwarnen oder sperren.";
+        if (PostQ is > 0 && _post == null) _post = await Posts.GetAsync(PostQ.Value);
+    }
+
+    private async Task GiveAsync()
+    {
+        _busy = true; _msg = _error = null;
+        try
+        {
+            _req.UserId = Id;
+            _req.PostId = _post?.PostId ?? 0;
+            var r = await Infractions.GiveAsync(_me!, _req);
+            if (!r.Ok) { _error = r.Error; return; }
+            var kind = IsWarningSelected ? "Ermahnung" : "Verwarnung";
+            await Audit.LogAsync(_me!, IsWarningSelected ? "user.warn" : "user.infraction", $"{Id} {_target!.DisplayName}{(_req.PostId > 0 ? $" Beitrag {_req.PostId}" : "")}", "");
+            _msg = $"{kind} gespeichert{(_req.SendPm ? " und Nachricht verschickt" : "")}.{(r.AutoBanned ? " " + r.BanText : "")}";
+            _req = new InfractionService.GiveRequest { UserId = Id, PostId = _req.PostId, LevelId = _req.LevelId };
+            await LoadAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ReverseAsync(InfractionService.Infraction i)
+    {
+        _msg = _error = null;
+        if (await Infractions.ReverseAsync(_me!, i.InfractionId, $"aufgehoben von {_me!.Username}"))
+        {
+            await Audit.LogAsync(_me!, "user.infraction.reverse", $"{Id} {_target!.DisplayName} #{i.InfractionId}", "");
+            _msg = "Verwarnung aufgehoben.";
+        }
+        await LoadAsync();
+    }
+
+    private async Task BanAsync()
+    {
+        _busy = true; _msg = _error = null;
+        try
+        {
+            if (!_canBan || _blocked != null) return;
+            var banned = _snap!.Settings.BannedGroups.FirstOrDefault();
+            if (banned == 0) { _error = "In den Einstellungen ist keine Gesperrt-Gruppe hinterlegt."; return; }
+            var lift = _banDays > 0 ? ForumTime.Now + _banDays * 86400L : 0;
+            await Users.BanAsync(Id, banned, _me!.UserId, _banReason.Trim(), lift);
+            await Audit.LogAsync(_me, "user.ban", $"{Id} {_target!.DisplayName} {(_banDays > 0 ? _banDays + " Tage" : "dauerhaft")}", "");
+            if (_banPm)
+            {
+                var text = $"Hallo {_target.DisplayName},\n\ndein Konto wurde {(lift > 0 ? $"bis {ForumTime.Full(lift)}" : "dauerhaft")} gesperrt." +
+                           (string.IsNullOrWhiteSpace(_banReason) ? "" : $"\n\n[b]Grund:[/b] {_banReason.Trim()}");
+                await Pms.SendAsync(_me.UserId, _me.Username, new[] { new PmRepository.Recipient(_target.UserId, _target.DisplayName, 0, 0) }, "Dein Konto wurde gesperrt", text, 0);
+            }
+            _msg = "Benutzer gesperrt.";
+            _banReason = "";
+            await LoadAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task UnbanAsync()
+    {
+        _busy = true; _msg = _error = null;
+        try
+        {
+            if (!_canBan || _blocked != null) return;
+            await Users.UnbanAsync(Id, _snap!.Settings.RegisteredGroupId);
+            await Audit.LogAsync(_me!, "user.unban", $"{Id} {_target!.DisplayName}", "");
+            _msg = "Sperre aufgehoben.";
+            await LoadAsync();
+        }
+        finally { _busy = false; }
+    }
+}

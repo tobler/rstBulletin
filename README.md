@@ -30,6 +30,12 @@ board can keep running in parallel until you switch over.
 - Subscribed threads on their own page (*Abos* in the navigation, with a counter for threads with new posts).
 - Ignore list (`vb_usertextfield.ignorelist`, as in vB): posts of ignored users are collapsed, and they cannot send
   you private messages. Moderators and admins cannot be ignored.
+- Warnings and infractions like vB (`vb_infraction`, `vb_infractionlevel`, `vb_infractionban`): moderators and admins
+  can warn ("Ermahnung", no points) or give an infraction with points that expire, directly from a post (shield menu)
+  or from the profile, with an automatic private message to the user. Automatic bans at a point/infraction threshold,
+  manual bans and unbans, an overview of active infractions and banned users, and a page where users see their own
+  infractions. Levels and ban rules are managed under *Admin › Verwarnungsstufen*. Whether moderators may warn and/or
+  ban is configurable.
 - Preferred post order (oldest/newest first) per user; image lightbox with paging (arrow keys, buttons, swipe).
 - Admin area:
   - Board settings, logo and SMTP.
@@ -327,7 +333,7 @@ This directory contains:
 
 ## Not (yet) included
 
-Infractions, calendar, blogs, social groups, thread prefixes, thread ratings, forum
+Calendar, blogs, social groups, thread prefixes, thread ratings, forum
 subscriptions. The vB data for these is left untouched and can be supported later.
 
 ## License

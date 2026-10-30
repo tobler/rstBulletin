@@ -49,6 +49,7 @@ builder.Services.AddSingleton<AnnouncementRepository>();
 builder.Services.AddSingleton<PremiumService>();
 builder.Services.AddSingleton<PollService>();
 builder.Services.AddSingleton<ReputationService>();
+builder.Services.AddSingleton<InfractionService>();
 builder.Services.AddSingleton<RstPayService>();
 builder.Services.AddSingleton<SearchService>();
 builder.Services.AddSingleton<ForumAdminService>();

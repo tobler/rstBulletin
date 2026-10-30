@@ -211,7 +211,10 @@
                 <div class="post-main">
                     <div class="post-meta">
                         <span>@ForumTime.Full(p.Dateline)@(own ? " · dein Beitrag" : "")</span>
-                        <a href="/post/@p.PostId" title="Link zu diesem Beitrag">#@p.Position</a>
+                        <span class="row" style="gap:8px">
+                            @if (_isMod && p.Infraction > 0) { <span class="pill @(p.Infraction == 2 ? "pill-warn" : "")" title="Zu diesem Beitrag gibt es eine @(p.Infraction == 2 ? "Verwarnung" : "Ermahnung") (nur für das Team sichtbar)">@(p.Infraction == 2 ? "Verwarnt" : "Ermahnt")</span> }
+                            <a href="/post/@p.PostId" title="Link zu diesem Beitrag">#@p.Position</a>
+                        </span>
                     </div>
                     @if (p.Visible == 0) { <div class="post-notice">Dieser Beitrag wartet auf Freigabe durch das Moderationsteam.</div> }
                     @if (p.Visible == 2) { <div class="post-notice">Gelöscht@(string.IsNullOrEmpty(p.DeletedBy) ? "" : $" von {HtmlUtil.CleanTitle(p.DeletedBy)}")@(string.IsNullOrEmpty(p.DeleteReason) ? "" : $": {HtmlUtil.CleanTitle(p.DeleteReason)}")</div> }
@@ -266,6 +269,19 @@
                         @if (_canReply && p.Visible == 1)
                         {
                             <a href="/thread/@_thread.ThreadId/reply?quote=@p.PostId" class="btn btn-sm">Zitieren</a>
+                        }
+                        @if (_canDiscipline && !own && p.UserId > 0 && !_staffIds.Contains(p.UserId))
+                        {
+                            <details class="menu mod-menu">
+                                <summary class="btn btn-sm btn-ghost" title="Moderation: Benutzer ermahnen, verwarnen oder sperren" aria-label="Moderation für @(a?.DisplayName ?? "diesen Benutzer")"><Icon Name="shield" Size="16" /></summary>
+                                <div class="menu-pop" role="menu">
+                                    <span class="small muted" style="padding:0 4px">@(a?.DisplayName ?? HtmlUtil.CleanTitle(p.Username))</span>
+                                    @if (_canWarn) { <a role="menuitem" href="/mod/user/@p.UserId?post=@p.PostId#verwarnen"><Icon Name="flag" Size="16" />Ermahnen / verwarnen …</a> }
+                                    @if (_canBan) { <a role="menuitem" href="/mod/user/@p.UserId?post=@p.PostId#sperren" class="danger"><Icon Name="lock" Size="16" />Sperren …</a> }
+                                    <a role="menuitem" href="/mod/user/@p.UserId#verlauf"><Icon Name="clock" Size="16" />Bisherige Verwarnungen</a>
+                                    @if (_user.IsAdmin) { <a role="menuitem" href="/admin/users/@p.UserId"><Icon Name="settings" Size="16" />Benutzer bearbeiten</a> }
+                                </div>
+                            </details>
                         }
                         @if (!_user.IsGuest && !own && p.UserId > 0 && !_staffIds.Contains(p.UserId))
                         {
@@ -369,6 +385,7 @@
     private List<ReputationService.Level> _levels = new();
     private HashSet<long> _rated = new();
     private HashSet<long> _ignored = new(), _staffIds = new();
+    private bool _canWarn, _canBan, _canDiscipline;
     private string? _ignoreMsg;
     [SupplyParameterFromQuery(Name = "ignore")] public string? IgnoreQ { get; set; }
     private int _page = 1;
@@ -456,6 +473,12 @@
         foreach (var a in _authors.Values)
             _signatures[a.UserId] = await Renderer.RenderSignatureAsync(a.Signature);
         if (_canRate) _rated = await Rep.RatedAsync(_user.UserId, ids);
+        if (_isMod)
+        {
+            _canWarn = InfractionService.CanWarn(_user, _snap);
+            _canBan = InfractionService.CanBan(_user, _snap);
+            _canDiscipline = _canWarn || _canBan;
+        }
         if (!_user.IsGuest)
         {
             _ignored = await Users.IgnoreListAsync(_user.UserId);

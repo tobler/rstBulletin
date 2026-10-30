@@ -128,6 +128,13 @@
             </section>
 
             <section class="card card-pad stack">
+                <h2 class="card-title">Moderation</h2>
+                <label class="toggle-row">Moderatoren dürfen ermahnen und verwarnen<input type="checkbox" @bind="_s.ModeratorsCanWarn" /></label>
+                <label class="toggle-row">Moderatoren dürfen Benutzer sperren und entsperren<input type="checkbox" @bind="_s.ModeratorsCanBan" /></label>
+                <p class="small muted" style="margin:0">Administratoren dürfen beides immer. Stufen und automatische Sperren: <a href="/admin/infractions">Verwarnungsstufen</a>.</p>
+            </section>
+
+            <section class="card card-pad stack">
                 <h2 class="card-title">Umfragen &amp; Reputation</h2>
                 <label class="toggle-row">Neue Umfragen erlauben (bestehende Umfragen bleiben immer sichtbar)<input type="checkbox" @bind="_s.PollsEnabled" /></label>
                 <label class="toggle-row">Reputation anzeigen und vergeben<input type="checkbox" @bind="_s.ReputationEnabled" /></label>

@@ -1,0 +1,159 @@
+@page "/admin/infractions"
+@attribute [Authorize(Policy = "Admin")]
+@rendermode InteractiveServer
+@inject InfractionService Infractions
+@inject BoardCache Cache
+@inject CurrentUser Current
+@inject TokenRepository Audit
+
+<PageTitle>Verwarnungsstufen – Administration</PageTitle>
+
+<main class="page container">
+    <AdminShell Active="infractionlevels" Title="Verwarnungsstufen" Subtitle="Gründe, Punkte, Laufzeit und automatische Sperren">
+        @if (_msg != null) { <div class="alert alert-ok" role="status">@_msg</div> }
+        @if (_err != null) { <div class="alert alert-err" role="alert">@_err</div> }
+
+        <section class="card">
+            <div class="card-head"><h2>Stufen</h2><button type="button" class="btn btn-sm btn-primary" @onclick="New">+ Neue Stufe</button></div>
+            @if (_levels.Count == 0) { <div class="empty">Noch keine Stufen. Ohne Stufen kann man nur mit „eigenem Grund“ verwarnen.</div> }
+            @foreach (var l in _levels)
+            {
+                <div class="thread-row">
+                    <div class="stack" style="gap:2px;flex:1 1 300px;min-width:0">
+                        <strong>@l.Title</strong>
+                        <span class="thread-sub">@(l.IsWarning ? "Ermahnung (keine Punkte)" : $"{l.Points} Punkte") · @l.DurationText</span>
+                    </div>
+                    <button type="button" class="btn btn-sm" @onclick="() => Edit(l)">Bearbeiten</button>
+                    <button type="button" class="btn btn-sm btn-ghost" @onclick="() => DeleteLevel(l)">Löschen</button>
+                </div>
+            }
+        </section>
+
+        @if (_edit != null)
+        {
+            <section class="card card-pad stack">
+                <h2 class="card-title">@(_edit.InfractionLevelId > 0 ? "Stufe bearbeiten" : "Neue Stufe")</h2>
+                <div class="form-grid">
+                    <div class="field" style="grid-column:1/-1"><label for="l-t">Titel / Grund</label><input id="l-t" @bind="_edit.Title" maxlength="200" placeholder="z. B. Beleidigung" /></div>
+                    <div class="field"><label for="l-p">Punkte</label><input id="l-p" type="number" min="0" @bind="_edit.Points" /></div>
+                    <div class="field"><label for="l-e">Laufzeit</label><input id="l-e" type="number" min="0" @bind="_edit.Expires" /></div>
+                    <div class="field">
+                        <label for="l-per">Einheit</label>
+                        <select id="l-per" @bind="_edit.Period"><option value="H">Stunden</option><option value="D">Tage</option><option value="M">Monate</option><option value="N">läuft nie ab</option></select>
+                    </div>
+                </div>
+                <label class="toggle-row">Nur Ermahnung (keine Punkte)<input type="checkbox" checked="@(_edit.Warning != 0)" @onchange="e => _edit.Warning = (bool)e.Value! ? 1 : 0" /></label>
+                <div class="form-actions"><button type="button" class="btn" @onclick="() => _edit = null">Abbrechen</button><button type="button" class="btn btn-primary" @onclick="SaveLevel">Speichern</button></div>
+            </section>
+        }
+
+        <section class="card">
+            <div class="card-head"><h2>Automatische Sperren</h2><button type="button" class="btn btn-sm" @onclick="NewRule">+ Neue Regel</button></div>
+            @if (_rules.Count == 0) { <div class="empty">Keine automatischen Sperren.</div> }
+            @foreach (var r in _rules)
+            {
+                <div class="thread-row">
+                    <div class="stack" style="gap:2px;flex:1 1 300px;min-width:0">
+                        <strong>Ab @r.Amount @(r.Method == "points" ? "Punkten" : "aktiven Verwarnungen") → @GroupName(r.BanUserGroupId), @r.PeriodText</strong>
+                        <span class="thread-sub">gilt für @(r.UserGroupId == -1 ? "alle Gruppen" : GroupName(r.UserGroupId))</span>
+                    </div>
+                    <button type="button" class="btn btn-sm" @onclick="() => EditRule(r)">Bearbeiten</button>
+                    <button type="button" class="btn btn-sm btn-ghost" @onclick="() => DeleteRule(r)">Löschen</button>
+                </div>
+            }
+        </section>
+
+        @if (_rule != null)
+        {
+            <section class="card card-pad stack">
+                <h2 class="card-title">@(_rule.InfractionBanId > 0 ? "Regel bearbeiten" : "Neue Regel")</h2>
+                <div class="form-grid">
+                    <div class="field"><label for="r-a">Ab</label><input id="r-a" type="number" min="1" @bind="_rule.Amount" /></div>
+                    <div class="field"><label for="r-m">Gezählt werden</label><select id="r-m" @bind="_rule.Method"><option value="points">Punkte</option><option value="infractions">aktive Verwarnungen</option></select></div>
+                    <div class="field">
+                        <label for="r-p">Sperrdauer</label>
+                        <select id="r-p" @bind="_rule.Period">
+                            <option value="D_1">1 Tag</option><option value="D_3">3 Tage</option><option value="D_7">7 Tage</option><option value="D_14">14 Tage</option>
+                            <option value="M_1">1 Monat</option><option value="M_3">3 Monate</option><option value="M_6">6 Monate</option><option value="Y_1">1 Jahr</option><option value="PERMA">dauerhaft</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="r-g">Gilt für</label>
+                        <select id="r-g" @bind="_rule.UserGroupId"><option value="-1">alle Gruppen</option>@foreach (var g in _groups) { <option value="@g.UserGroupId">@HtmlUtil.CleanTitle(g.Title)</option> }</select>
+                    </div>
+                    <div class="field">
+                        <label for="r-b">Sperren in Gruppe</label>
+                        <select id="r-b" @bind="_rule.BanUserGroupId">@foreach (var g in _groups) { <option value="@g.UserGroupId">@HtmlUtil.CleanTitle(g.Title)</option> }</select>
+                    </div>
+                </div>
+                <div class="form-actions"><button type="button" class="btn" @onclick="() => _rule = null">Abbrechen</button><button type="button" class="btn btn-primary" @onclick="SaveRule">Speichern</button></div>
+            </section>
+        }
+    </AdminShell>
+</main>
+
+@code {
+    private List<InfractionService.Level> _levels = new();
+    private List<InfractionService.BanRule> _rules = new();
+    private List<UserGroup> _groups = new();
+    private InfractionService.Level? _edit;
+    private InfractionService.BanRule? _rule;
+    private string? _msg, _err;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _levels = await Infractions.LevelsAsync();
+        _rules = await Infractions.BanRulesAsync();
+        var snap = await Cache.GetAsync();
+        _groups = snap.Groups.Values.OrderBy(g => g.UserGroupId).ToList();
+    }
+
+    private string GroupName(int id) => _groups.FirstOrDefault(g => g.UserGroupId == id) is { } g ? HtmlUtil.CleanTitle(g.Title) : $"Gruppe {id}";
+
+    private void New() => _edit = new InfractionService.Level { Points = 1, Expires = 10, Period = "D" };
+    private void Edit(InfractionService.Level l) => _edit = new InfractionService.Level
+        { InfractionLevelId = l.InfractionLevelId, Title = l.Title, Points = l.Points, Expires = l.Expires, Period = l.Period, Warning = l.Warning, Extend = l.Extend };
+
+    private async Task SaveLevel()
+    {
+        _msg = _err = null;
+        if (string.IsNullOrWhiteSpace(_edit!.Title)) { _err = "Bitte einen Titel eingeben."; return; }
+        await Infractions.SaveLevelAsync(_edit);
+        await Audit.LogAsync(await Current.GetAsync(), "infractionlevel.save", _edit.Title, "");
+        _edit = null; _msg = "Stufe gespeichert.";
+        await LoadAsync();
+    }
+
+    private async Task DeleteLevel(InfractionService.Level l)
+    {
+        await Infractions.DeleteLevelAsync(l.InfractionLevelId);
+        await Audit.LogAsync(await Current.GetAsync(), "infractionlevel.delete", l.Title, "");
+        _msg = "Stufe gelöscht. Bestehende Verwarnungen bleiben erhalten.";
+        await LoadAsync();
+    }
+
+    private async Task NewRule()
+    {
+        var snap = await Cache.GetAsync();
+        _rule = new InfractionService.BanRule { Amount = 10, Method = "points", Period = "D_7", UserGroupId = -1, BanUserGroupId = snap.Settings.BannedGroups.FirstOrDefault() };
+    }
+    private void EditRule(InfractionService.BanRule r) => _rule = new InfractionService.BanRule
+        { InfractionBanId = r.InfractionBanId, Amount = r.Amount, Method = r.Method, Period = r.Period, UserGroupId = r.UserGroupId, BanUserGroupId = r.BanUserGroupId };
+
+    private async Task SaveRule()
+    {
+        await Infractions.SaveBanRuleAsync(_rule!);
+        await Audit.LogAsync(await Current.GetAsync(), "infractionban.save", $"{_rule!.Amount} {_rule.Method} {_rule.Period}", "");
+        _rule = null; _msg = "Regel gespeichert.";
+        await LoadAsync();
+    }
+
+    private async Task DeleteRule(InfractionService.BanRule r)
+    {
+        await Infractions.DeleteBanRuleAsync(r.InfractionBanId);
+        _msg = "Regel gelöscht.";
+        await LoadAsync();
+    }
+}

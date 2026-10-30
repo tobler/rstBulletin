@@ -180,6 +180,49 @@ public sealed class Schema(Db db)
               PRIMARY KEY (`reputationlevelid`),
               KEY `reputationlevel` (`minimumreputation`)
             ) DEFAULT CHARSET=utf8mb4;
+            
+            CREATE TABLE IF NOT EXISTS {t.Infraction} (
+              `infractionid` int(10) unsigned NOT NULL AUTO_INCREMENT,
+              `infractionlevelid` int(10) unsigned NOT NULL DEFAULT 0,
+              `postid` int(10) unsigned NOT NULL DEFAULT 0,
+              `userid` int(10) unsigned NOT NULL DEFAULT 0,
+              `whoadded` int(10) unsigned NOT NULL DEFAULT 0,
+              `points` int(10) unsigned NOT NULL DEFAULT 0,
+              `dateline` int(10) unsigned NOT NULL DEFAULT 0,
+              `note` varchar(255) NOT NULL DEFAULT '',
+              `action` smallint(5) unsigned NOT NULL DEFAULT 0,
+              `actiondateline` int(10) unsigned NOT NULL DEFAULT 0,
+              `actionuserid` int(10) unsigned NOT NULL DEFAULT 0,
+              `actionreason` varchar(255) NOT NULL DEFAULT '0',
+              `expires` int(10) unsigned NOT NULL DEFAULT 0,
+              `threadid` int(10) unsigned NOT NULL DEFAULT 0,
+              `customreason` varchar(255) NOT NULL DEFAULT '',
+              PRIMARY KEY (`infractionid`),
+              KEY `expires` (`expires`,`action`),
+              KEY `userid` (`userid`,`action`),
+              KEY `postid` (`postid`)
+            ) DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS {t.InfractionLevel} (
+              `infractionlevelid` int(10) unsigned NOT NULL AUTO_INCREMENT,
+              `points` int(10) unsigned NOT NULL DEFAULT 0,
+              `expires` int(10) unsigned NOT NULL DEFAULT 0,
+              `period` enum('H','D','M','N') NOT NULL DEFAULT 'H',
+              `warning` smallint(5) unsigned NOT NULL DEFAULT 0,
+              `extend` smallint(5) unsigned NOT NULL DEFAULT 0,
+              PRIMARY KEY (`infractionlevelid`)
+            ) DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS {t.InfractionBan} (
+              `infractionbanid` int(10) unsigned NOT NULL AUTO_INCREMENT,
+              `usergroupid` int(11) NOT NULL DEFAULT 0,
+              `banusergroupid` int(10) unsigned NOT NULL DEFAULT 0,
+              `amount` int(10) unsigned NOT NULL DEFAULT 0,
+              `period` char(5) NOT NULL DEFAULT '',
+              `method` enum('points','infractions') NOT NULL DEFAULT 'infractions',
+              PRIMARY KEY (`infractionbanid`),
+              KEY `usergroupid` (`usergroupid`)
+            ) DEFAULT CHARSET=utf8mb4;
             """);
     }
 

@@ -64,7 +64,7 @@ h1:focus, h1:focus-visible { outline: none; }
 .nav a:hover { background: var(--chip); color: var(--ink); }
 .nav a.active { background: var(--chip); color: var(--ink); font-weight: 600; }
 .nav a .count { margin-left: 6px; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: var(--accent); color: #fff; vertical-align: 1px; }
-.search-box { flex: 1 1 220px; display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--input-border); border-radius: var(--radius-s); padding: 0 12px; min-height: 44px; }
+.search-box { flex: 1 1 160px; display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--input-border); border-radius: var(--radius-s); padding: 0 12px; min-height: 44px; }
 .search-box input { border: 0; background: transparent; flex: 1; min-width: 0; font: inherit; font-size: 14px; color: var(--ink); outline: none; }
 .user-area { display: flex; align-items: center; gap: 6px; }
 .icon-btn { position: relative; width: 44px; height: 44px; border: 0; background: transparent; border-radius: var(--radius-s); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: var(--muted-2); text-decoration: none; }
@@ -455,3 +455,10 @@ html[data-theme="dark"] .theme-toggle .moon { display: none; } html[data-theme="
 .post-ignored > summary .link { color: var(--accent); font-weight: 600; }
 .post-ignored[open] > summary .link { display: none; }
 .post-ignored[open] > .post { border: 0; border-top: 1px dashed var(--border); border-radius: 0 0 var(--radius) var(--radius); }
+
+/* ---------- Moderations-Menü am Beitrag ---------- */
+.mod-menu .menu-pop { min-width: 230px; gap: 0; padding: 6px; }
+.mod-menu .menu-pop a { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 7px; color: var(--ink); text-decoration: none; font-weight: 500; font-size: 14px; white-space: nowrap; }
+.mod-menu .menu-pop a:hover { background: var(--head); }
+.mod-menu .menu-pop a.danger { color: var(--danger); }
+.mod-menu .menu-pop > span { display: block; padding: 4px 10px 6px; }

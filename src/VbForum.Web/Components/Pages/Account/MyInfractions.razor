@@ -1,0 +1,53 @@
+@page "/account/infractions"
+@attribute [Authorize]
+@inject CurrentUser Current
+@inject InfractionService Infractions
+
+<PageTitle>Verwarnungen</PageTitle>
+
+@if (!_loaded) { return; }
+<main class="page container">
+    <AccountShell User="_user!" Active="infractions">
+        <section class="card card-pad stack" style="gap:6px">
+            <h2 class="card-title">Deine Verwarnungen und Ermahnungen</h2>
+            <p style="margin:0">Aktive Punkte: <strong>@_sum!.Points</strong> · Verwarnungen: @_sum.Infractions · Ermahnungen: @_sum.Warnings</p>
+            <p class="small muted" style="margin:0">Punkte verfallen nach der angegebenen Zeit automatisch.</p>
+        </section>
+        <section class="card">
+            @if (_list.Count == 0) { <div class="empty">Keine – vorbildlich!</div> }
+            @foreach (var i in _list)
+            {
+                <div class="thread-row" style="@(i.IsActive ? "" : "opacity:.7")">
+                    <div class="stack" style="gap:3px;min-width:0">
+                        <div class="thread-title-line">
+                            <span class="pill @(i.IsWarning ? "" : "pill-warn")">@(i.IsWarning ? "Ermahnung" : $"Verwarnung · {i.Points} Punkte")</span>
+                            <strong>@i.Reason</strong>
+                            <span class="pill @(i.IsActive ? "pill-accent" : "")">@i.StatusText</span>
+                        </div>
+                        <span class="thread-sub">
+                            @ForumTime.Full(i.Dateline)
+                            @if (i.PostId > 0 && i.PostThreadId > 0) { <text> · </text><a href="/post/@i.PostId">@HtmlUtil.CleanTitle(i.PostThreadTitle)</a> }
+                            @if (i.Expires > 0 && i.IsActive) { <text> · verfällt @ForumTime.Full(i.Expires)</text> }
+                            @if (i.Expires == 0 && i.IsActive && !i.IsWarning) { <text> · verfällt nicht</text> }
+                        </span>
+                    </div>
+                </div>
+            }
+        </section>
+    </AccountShell>
+</main>
+
+@code {
+    private ForumUser? _user;
+    private List<InfractionService.Infraction> _list = new();
+    private InfractionService.Summary? _sum;
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = await Current.GetAsync();
+        _sum = await Infractions.SummaryAsync(_user.UserId);
+        _list = await Infractions.ForUserAsync(_user.UserId);
+        _loaded = true;
+    }
+}

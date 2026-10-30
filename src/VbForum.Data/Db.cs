@@ -119,6 +119,9 @@ public sealed class Tables(string p)
     public string PollVote => N("pollvote");
     public string Reputation => N("reputation");
     public string ReputationLevel => N("reputationlevel");
+    public string Infraction => N("infraction");
+    public string InfractionLevel => N("infractionlevel");
+    public string InfractionBan => N("infractionban");
 
     public const string OwnSetting = "`vbf_setting`";
     public const string OwnUserAuth = "`vbf_userauth`";

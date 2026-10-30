@@ -23,6 +23,11 @@
             <a href="/admin/announcements" class="@A("announcements")"><Icon Name="megaphone" />Ankündigungen</a>
         }
         <a href="/admin/moderation" class="@A("mod")"><Icon Name="flag" />Moderation @if (_queue > 0) { <span class="count">@_queue</span> }</a>
+        <a href="/mod/infractions" class="@A("infractions")"><Icon Name="shield" />Verwarnungen &amp; Sperren</a>
+        @if (_admin)
+        {
+            <a href="/admin/infractions" class="@A("infractionlevels")"><Icon Name="tool" />Verwarnungsstufen</a>
+        }
         @if (_admin)
         {
             <a href="/admin/attachments" class="@A("att")"><Icon Name="paperclip" />Anhänge</a>

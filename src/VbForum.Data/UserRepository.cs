@@ -418,6 +418,18 @@ public sealed class UserRepository(Db db)
         return r;
     }
 
+    public sealed record BanRow(long UserId, string Name, long BanDate, long LiftDate, string Reason);
+
+    /// <summary>Alle aktuell gesperrten Benutzer (mit Eintrag in vb_userban).</summary>
+    public async Task<List<BanRow>> BannedAsync()
+    {
+        await using var c = await db.OpenAsync();
+        return (await c.QueryAsync<(long, string, long, long, string)>($"""
+            SELECT CAST(b.userid AS SIGNED), u.username, CAST(b.bandate AS SIGNED), CAST(b.liftdate AS SIGNED), IFNULL(b.reason, '')
+            FROM {T.UserBan} b JOIN {T.User} u ON u.userid = b.userid ORDER BY b.bandate DESC LIMIT 500
+            """)).Select(x => new BanRow(x.Item1, HtmlUtil.CleanTitle(x.Item2), x.Item3, x.Item4, HtmlUtil.CleanTitle(x.Item5))).ToList();
+    }
+
     /// <summary>Abgelaufene Sperren aufheben (vB macht das per Cron).</summary>
     public async Task<int> LiftExpiredBansAsync(int fallbackGroupId)
     {

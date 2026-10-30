@@ -9,7 +9,7 @@ public sealed class PostRepository(Db db)
 
     private const string Cols = """
         p.postid, p.threadid, p.parentid, p.username, p.userid, p.title, p.dateline, p.pagetext, p.allowsmilie,
-        p.showsignature, p.ipaddress, p.visible, p.attach
+        p.showsignature, p.ipaddress, p.visible, p.attach, p.infraction
         """;
 
     private string Joins => $"""

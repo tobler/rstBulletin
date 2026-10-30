@@ -1,0 +1,73 @@
+@page "/mod/infractions"
+@attribute [Authorize(Policy = "Moderator")]
+@inject InfractionService Infractions
+@inject UserRepository Users
+
+<PageTitle>Verwarnungen &amp; Sperren – Moderation</PageTitle>
+
+<main class="page container">
+    <AdminShell Active="infractions" Title="Verwarnungen &amp; Sperren" Subtitle="Benutzer ermahnen, verwarnen oder sperren">
+        <form method="get" action="/mod/user" class="card card-pad row" style="gap:8px" data-enhance-nav="false">
+            <label for="mu-n" class="small" style="font-weight:600">Benutzer maßregeln:</label>
+            <input id="mu-n" name="name" class="input" placeholder="Benutzername" style="flex:1 1 200px" required />
+            <button type="submit" class="btn btn-primary btn-sm">Öffnen</button>
+        </form>
+        <p class="small muted" style="margin:0">Schneller geht es direkt am Beitrag: über das Schild-Symbol <Icon Name="shield" Size="14" /> unter jedem Beitrag.</p>
+
+        <div class="seg" role="group" style="align-self:flex-start">
+            <a href="/mod/infractions" class="@(!All ? "on" : "")">Aktive</a>
+            <a href="/mod/infractions?all=1" class="@(All ? "on" : "")">Alle (letzte 200)</a>
+        </div>
+
+        <section class="card">
+            @if (_list.Count == 0) { <div class="empty">Keine @(All ? "" : "aktiven ")Verwarnungen.</div> }
+            @foreach (var i in _list)
+            {
+                <div class="thread-row">
+                    <div class="stack" style="gap:3px;min-width:0;flex:1 1 360px">
+                        <div class="thread-title-line">
+                            <a href="/mod/user/@i.UserId" style="font-weight:600">@HtmlUtil.CleanTitle(i.Username)</a>
+                            <span class="pill @(i.IsWarning ? "" : "pill-warn")">@(i.IsWarning ? "Ermahnung" : $"Verwarnung · {i.Points} P.")</span>
+                            <span>@i.Reason</span>
+                            @if (All) { <span class="pill @(i.IsActive ? "pill-accent" : "")">@i.StatusText</span> }
+                        </div>
+                        <span class="thread-sub">
+                            @ForumTime.Full(i.Dateline) von @HtmlUtil.CleanTitle(i.WhoAddedName)
+                            @if (i.PostId > 0) { <text> · </text><a href="/post/@i.PostId">@(string.IsNullOrEmpty(i.PostThreadTitle) ? $"Beitrag #{i.PostId}" : HtmlUtil.CleanTitle(i.PostThreadTitle))</a> }
+                            @if (i.Expires > 0 && i.IsActive) { <text> · verfällt @ForumTime.Full(i.Expires)</text> }
+                        </span>
+                    </div>
+                    <a class="btn btn-sm" href="/mod/user/@i.UserId">Öffnen</a>
+                </div>
+            }
+        </section>
+
+        <section class="card">
+            <div class="card-head"><h2>Gesperrte Benutzer</h2><span class="small muted">@_bans.Count</span></div>
+            @if (_bans.Count == 0) { <div class="empty">Niemand ist gesperrt.</div> }
+            @foreach (var b in _bans)
+            {
+                <div class="thread-row">
+                    <div class="stack" style="gap:3px;min-width:0;flex:1 1 360px">
+                        <a href="/mod/user/@b.UserId" style="font-weight:600">@b.Name</a>
+                        <span class="thread-sub">seit @ForumTime.Full(b.BanDate) · @(b.LiftDate > 0 ? $"bis {ForumTime.Full(b.LiftDate)}" : "dauerhaft")@(string.IsNullOrWhiteSpace(b.Reason) ? "" : $" · {b.Reason}")</span>
+                    </div>
+                    <a class="btn btn-sm" href="/mod/user/@b.UserId#sperren">Öffnen</a>
+                </div>
+            }
+        </section>
+    </AdminShell>
+</main>
+
+@code {
+    [SupplyParameterFromQuery(Name = "all")] public int? AllQ { get; set; }
+    private bool All => AllQ == 1;
+    private List<InfractionService.Infraction> _list = new();
+    private List<UserRepository.BanRow> _bans = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _list = await Infractions.RecentAsync(200, onlyActive: !All);
+        _bans = await Users.BannedAsync();
+    }
+}

@@ -28,6 +28,10 @@
                     <span class="muted small">
                         @GroupTitle(_profile.UserGroupId) · Mitglied seit @ForumTime.Date(_profile.JoinDate) · @ForumTime.Number(_profile.Posts) @(_profile.Posts == 1 ? "Beitrag" : "Beiträge") · zuletzt aktiv @ForumTime.Relative(_profile.LastActivity)
                     </span>
+                    @if (_canDiscipline)
+                    {
+                        <a class="btn btn-sm" href="/mod/user/@_profile.UserId" style="align-self:flex-start"><Icon Name="shield" Size="14" /> Ermahnen / verwarnen / sperren</a>
+                    }
                     @if (_canIgnore)
                     {
                         <form method="post" action="/ignore/@_profile.UserId" class="inline">
@@ -133,7 +137,7 @@
     private ForumUser? _me;
     private UserRow? _profile;
     private (long Rep, string Level)? _rep;
-    private bool _viewerIsAdmin, _canIgnore, _isIgnored;
+    private bool _viewerIsAdmin, _canIgnore, _isIgnored, _canDiscipline;
     private Dictionary<string, string> _fields = new();
     private MarkupString _signature;
     private PagedResult<Post>? _posts;
@@ -157,6 +161,7 @@
                 {
                     var pu = ForumUser.From(_profile, snapR);
                     _canIgnore = !(pu.IsAdmin || pu.IsSuperMod || new Permissions(snapR).IsAnyModerator(pu));
+                    _canDiscipline = (InfractionService.CanWarn(viewer, snapR) || InfractionService.CanBan(viewer, snapR)) && InfractionService.CannotTarget(viewer, pu, snapR) == null;
                     _isIgnored = (await Users.IgnoreListAsync(viewer.UserId)).Contains(_profile.UserId);
                 }
                 if (_profile != null && snapR.Settings.ReputationEnabled)

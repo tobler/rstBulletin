@@ -99,6 +99,12 @@ public sealed class BoardSettings
     public IReadOnlySet<int> PremiumForums => ParseIds(PremiumForumIds);
     public int MinSecondsBetweenPosts { get; set; } = 15;
 
+    // ---------- Moderation ----------
+    /// <summary>Moderatoren (nicht nur Admins) dürfen ermahnen und verwarnen.</summary>
+    public bool ModeratorsCanWarn { get; set; } = true;
+    /// <summary>Moderatoren (nicht nur Admins) dürfen Benutzer sperren und entsperren.</summary>
+    public bool ModeratorsCanBan { get; set; } = true;
+
     // ---------- Umfragen & Reputation (Standardwerte wie vBulletin 4) ----------
     public bool PollsEnabled { get; set; } = true;
     public bool ReputationEnabled { get; set; } = true;
