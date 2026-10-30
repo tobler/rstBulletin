@@ -205,6 +205,9 @@ html[data-theme="dark"] .pager .on { color: #0B1220; }
 
 /* ---------- Beiträge ---------- */
 .post { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); display: flex; flex-wrap: wrap; overflow: hidden; scroll-margin-top: 80px; }
+/* Offene Menüs (Bewerten, Moderation …) dürfen über den Beitrag hinausragen und liegen über dem nächsten Beitrag */
+.post:has(details[open]) { overflow: visible; position: relative; z-index: 6; }
+.post:has(details[open]) .post-aside { border-radius: var(--radius) 0 0 var(--radius); }
 .post.own { border-color: var(--accent-border); }
 .post.own .post-aside { background: var(--own-bg); }
 .post.moderated { border-color: #E9C46A; }
@@ -462,3 +465,4 @@ html[data-theme="dark"] .theme-toggle .moon { display: none; } html[data-theme="
 .mod-menu .menu-pop a:hover { background: var(--head); }
 .mod-menu .menu-pop a.danger { color: var(--danger); }
 .mod-menu .menu-pop > span { display: block; padding: 4px 10px 6px; }
+@media (max-width: 640px) { .post:has(details[open]) .post-aside { border-radius: var(--radius) var(--radius) 0 0; } }
