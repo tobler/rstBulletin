@@ -380,6 +380,7 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .user-menu-pop a { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 7px; color: var(--ink); text-decoration: none; font-weight: 500; font-size: 14px; white-space: nowrap; }
 .user-menu-pop a:hover { background: var(--head); }
 .user-menu-pop a.danger { color: var(--danger); }
+.user-menu-sep { border-top: 1px solid var(--border-soft); margin: 4px 0; }
 .user-menu-form { margin: 0; border-top: 1px solid var(--border-soft); margin-top: 4px; padding-top: 4px; }
 .user-menu-pop button { all: unset; box-sizing: border-box; width: 100%; display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 7px; font-weight: 600; font-size: 14px; cursor: pointer; white-space: nowrap; }
 .user-menu-pop button.danger { color: var(--danger); }

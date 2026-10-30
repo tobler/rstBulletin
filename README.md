@@ -31,7 +31,7 @@ board can keep running in parallel until you switch over.
 - Ignore list (`vb_usertextfield.ignorelist`, as in vB): posts of ignored users are collapsed, and they cannot send
   you private messages. Moderators and admins cannot be ignored.
 - Warnings and infractions like vB (`vb_infraction`, `vb_infractionlevel`, `vb_infractionban`): moderators and admins
-  can warn ("Ermahnung", no points) or give an infraction with points that expire, directly from a post (shield menu)
+  can warn ("Ermahnung", no points) or give an infraction with points that expire, directly from a post (dropdown on the user name next to the post)
   or from the profile, with an automatic private message to the user. Automatic bans at a point/infraction threshold,
   manual bans and unbans, an overview of active infractions and banned users, and a page where users see their own
   infractions. Levels and ban rules are managed under *Admin › Verwarnungsstufen*. Whether moderators may warn and/or
