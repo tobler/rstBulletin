@@ -131,6 +131,15 @@
                 <h2 class="card-title">Moderation</h2>
                 <label class="toggle-row">Moderatoren dürfen ermahnen und verwarnen<input type="checkbox" @bind="_s.ModeratorsCanWarn" /></label>
                 <label class="toggle-row">Moderatoren dürfen Benutzer sperren und entsperren<input type="checkbox" @bind="_s.ModeratorsCanBan" /></label>
+                <div class="field">
+                    <label for="st-inv">Wer darf seinen Online-Status („zuletzt aktiv“) selbst verbergen?</label>
+                    <select id="st-inv" @bind="_s.InvisibleAllowed">
+                        <option value="staff">Moderatoren und Administratoren</option>
+                        <option value="all">Alle registrierten Benutzer</option>
+                        <option value="off">Nur Administratoren</option>
+                    </select>
+                    <span class="hint">Einstellung im Benutzerbereich unter „Einstellungen &amp; Abos“. Admins können es außerdem bei jedem Benutzer einzeln setzen (Benutzer bearbeiten).</span>
+                </div>
                 <p class="small muted" style="margin:0">Administratoren dürfen beides immer. Stufen und automatische Sperren: <a href="/admin/infractions">Verwarnungsstufen</a>.</p>
             </section>
 

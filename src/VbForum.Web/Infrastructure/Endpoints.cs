@@ -481,6 +481,15 @@ public static class Endpoints
             return Back(http, "/account/reputation");
         });
 
+        app.MapPost("/prefs/invisible", async (HttpContext http, [FromForm] string? invisible, UserRepository users, BoardCache cache) =>
+        {
+            var u = await http.ForumUserAsync();
+            if (u.IsGuest) return Results.LocalRedirect("/login");
+            if (!new Permissions(await cache.GetAsync()).CanGoInvisible(u)) return Results.StatusCode(403);
+            await users.SetOptionAsync(u.UserId, UserRepository.OptionInvisible, invisible == "1");
+            return Back(http, "/account/subscriptions");
+        });
+
         app.MapPost("/prefs/postorder", async (HttpContext http, [FromForm] string? order, UserRepository users) =>
         {
             var u = await http.ForumUserAsync();

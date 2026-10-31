@@ -105,6 +105,10 @@ public sealed class BoardSettings
     /// <summary>Moderatoren (nicht nur Admins) dürfen Benutzer sperren und entsperren.</summary>
     public bool ModeratorsCanBan { get; set; } = true;
 
+    /// <summary>Wer darf den Online-Status („zuletzt aktiv“) verbergen: „staff“ = Moderatoren und Admins, „all“ = alle registrierten, „off“ = niemand.
+    /// Admins können es zusätzlich bei jedem Benutzer einzeln setzen.</summary>
+    public string InvisibleAllowed { get; set; } = "staff";
+
     // ---------- Umfragen & Reputation (Standardwerte wie vBulletin 4) ----------
     public bool PollsEnabled { get; set; } = true;
     public bool ReputationEnabled { get; set; } = true;

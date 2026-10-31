@@ -36,6 +36,9 @@ board can keep running in parallel until you switch over.
   manual bans and unbans, an overview of active infractions and banned users, and a page where users see their own
   infractions. Levels and ban rules are managed under *Admin › Verwarnungsstufen*. Whether moderators may warn and/or
   ban is configurable.
+- Hide online status ("zuletzt aktiv", online counter) with the vB "invisible" option (`vb_user.options` bit 512): per user
+  in the user area (who may use it is configurable: staff, everyone or admins only) or set by admins per user; staff
+  still see it.
 - Preferred post order (oldest/newest first) per user; image lightbox with paging (arrow keys, buttons, swipe).
 - Admin area:
   - Board settings, logo and SMTP.

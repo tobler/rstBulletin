@@ -26,7 +26,7 @@
                 <div class="stack" style="gap:4px">
                     <h1 style="font-size:24px">@_profile.DisplayName</h1>
                     <span class="muted small">
-                        @GroupTitle(_profile.UserGroupId) · Mitglied seit @ForumTime.Date(_profile.JoinDate) · @ForumTime.Number(_profile.Posts) @(_profile.Posts == 1 ? "Beitrag" : "Beiträge") · zuletzt aktiv @ForumTime.Relative(_profile.LastActivity)
+                        @GroupTitle(_profile.UserGroupId) · Mitglied seit @ForumTime.Date(_profile.JoinDate) · @ForumTime.Number(_profile.Posts) @(_profile.Posts == 1 ? "Beitrag" : "Beiträge") @if (!UserRepository.IsInvisible(_profile) || _viewerStaff) { @($" · zuletzt aktiv {ForumTime.Relative(_profile.LastActivity)}{(UserRepository.IsInvisible(_profile) ? " (für andere verborgen)" : "")}") }
                     </span>
                     @if (_canDiscipline)
                     {
@@ -113,7 +113,7 @@
                         </div>
                     </div>
                     <div class="thread-counts"><strong>@ForumTime.Number(m.Posts)</strong> Beiträge</div>
-                    <div class="thread-last"><span class="muted">dabei seit @ForumTime.Date(m.JoinDate)</span><span class="muted">aktiv @ForumTime.Relative(m.LastActivity, false)</span></div>
+                    <div class="thread-last"><span class="muted">dabei seit @ForumTime.Date(m.JoinDate)</span>@if (!UserRepository.IsInvisible(m) || _viewerStaff) { <span class="muted">aktiv @ForumTime.Relative(m.LastActivity, false)@(UserRepository.IsInvisible(m) ? " (verborgen)" : "")</span> }</div>
                 </div>
             }
             @if (_list.Items.Count == 0) { <div class="empty">Keine Mitglieder gefunden.</div> }
@@ -137,7 +137,7 @@
     private ForumUser? _me;
     private UserRow? _profile;
     private (long Rep, string Level)? _rep;
-    private bool _viewerIsAdmin, _canIgnore, _isIgnored, _canDiscipline;
+    private bool _viewerIsAdmin, _canIgnore, _isIgnored, _canDiscipline, _viewerStaff;
     private Dictionary<string, string> _fields = new();
     private MarkupString _signature;
     private PagedResult<Post>? _posts;
@@ -152,6 +152,7 @@
         {
             _snap = await Cache.GetAsync();
             _me = await Current.GetAsync();
+            _viewerStaff = new Permissions(_snap).IsAnyModerator(_me);
             if (Id > 0)
             {
                 _profile = await Users.GetAsync(Id);
@@ -177,7 +178,7 @@
             }
             else
             {
-                _list = await Users.MemberListAsync(Q, Sort ?? "joindate", Math.Max(1, PageQ ?? 1), 30);
+                _list = await Users.MemberListAsync(Q, Sort ?? "joindate", Math.Max(1, PageQ ?? 1), 30, hideInvisible: !_viewerStaff);
             }
         }
         finally { _loaded = true; }

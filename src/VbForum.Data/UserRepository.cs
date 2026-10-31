@@ -132,6 +132,9 @@ public sealed class UserRepository(Db db)
 
     /// <summary>vB-Benutzeroption „emailonpm“ (Bit 4096 in vb_user.options): E-Mail bei neuer privater Nachricht.</summary>
     public const long OptionEmailOnPm = 4096;
+    /// <summary>vB-Option „unsichtbar“: Online-Status und „zuletzt aktiv“ für andere verbergen (Team sieht es weiterhin).</summary>
+    public const long OptionInvisible = 512;
+    public static bool IsInvisible(UserRow u) => (u.Options & OptionInvisible) != 0;
 
     public async Task SetOptionAsync(long userId, long bit, bool on)
     {
@@ -235,6 +238,8 @@ public sealed class UserRepository(Db db)
         public bool Desc { get; set; } = true;
         public int Page { get; set; } = 1;
         public int PageSize { get; set; } = 50;
+        /// <summary>Bei Sortierung nach „zuletzt aktiv“ unsichtbare Benutzer ans Ende stellen (Mitgliederliste für Nicht-Team).</summary>
+        public bool InvisibleLast { get; set; }
     }
 
     private static (string Where, object Param) AdminWhere(AdminQuery q)
@@ -268,6 +273,7 @@ public sealed class UserRepository(Db db)
         {
             "username" => "u.username", "posts" => "u.posts", "lastactivity" => "u.lastactivity", "email" => "u.email", _ => "u.joindate"
         } + (q.Desc ? " DESC" : " ASC");
+        if (q.InvisibleLast && q.Sort == "lastactivity") order = $"(u.options & {OptionInvisible}) <> 0, {order}";
         await using var c = await db.OpenAsync();
         var total = await c.ExecuteScalarAsync<long>($"SELECT COUNT(*) FROM {T.User} u WHERE {where}", p);
         var items = (await c.QueryAsync<UserRow>($"{Select} WHERE {where} ORDER BY {order} LIMIT @off, @size", p)).ToList();
@@ -439,11 +445,12 @@ public sealed class UserRepository(Db db)
         return ids.Count;
     }
 
-    public async Task<PagedResult<UserRow>> MemberListAsync(string? name, string sort, int page, int pageSize)
+    public async Task<PagedResult<UserRow>> MemberListAsync(string? name, string sort, int page, int pageSize, bool hideInvisible = true)
     {
         return await AdminSearchAsync(new AdminQuery
         {
-            Name = name, Sort = sort, Desc = sort != "username", Page = page, PageSize = pageSize, MinPosts = string.IsNullOrWhiteSpace(name) ? 1 : null
+            Name = name, Sort = sort, Desc = sort != "username", Page = page, PageSize = pageSize, MinPosts = string.IsNullOrWhiteSpace(name) ? 1 : null,
+            InvisibleLast = hideInvisible
         });
     }
 
@@ -465,6 +472,6 @@ public sealed class UserRepository(Db db)
     public async Task<long> OnlineCountAsync(int minutes = 15)
     {
         await using var c = await db.OpenAsync();
-        return await c.ExecuteScalarAsync<long>($"SELECT COUNT(*) FROM {T.User} WHERE lastactivity > @t", new { t = ForumTime.Now - minutes * 60 });
+        return await c.ExecuteScalarAsync<long>($"SELECT COUNT(*) FROM {T.User} WHERE lastactivity > @t AND (options & {OptionInvisible}) = 0", new { t = ForumTime.Now - minutes * 60 });
     }
 }

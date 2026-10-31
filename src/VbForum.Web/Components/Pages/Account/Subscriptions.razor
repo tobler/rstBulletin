@@ -3,6 +3,7 @@
 @inject CurrentUser Current
 @inject SubscriptionRepository Subs
 @inject UserRepository Users
+@inject BoardCache Cache
 @inject MailService Mail
 
 <PageTitle>Abonnements</PageTitle>
@@ -24,6 +25,21 @@
             <noscript><button type="submit" class="btn btn-sm">Übernehmen</button></noscript>
             <p class="small muted" style="margin:0">Wird in deinem Konto gespeichert und gilt auf allen Geräten, auf denen du angemeldet bist.</p>
         </form>
+
+        @if (_canInvisible)
+        {
+            <form method="post" action="/prefs/invisible" class="card card-pad stack" style="gap:8px" data-enhance="false">
+                <AntiforgeryToken />
+                <input type="hidden" name="returnUrl" value="/account/subscriptions?saved=invisible" />
+                <h2 class="card-title">Online-Status</h2>
+                <div class="row" style="gap:16px;flex-wrap:wrap">
+                    <label class="check"><input type="radio" name="invisible" value="0" checked="@(!_invisible)" data-autosubmit />Sichtbar</label>
+                    <label class="check"><input type="radio" name="invisible" value="1" checked="@_invisible" data-autosubmit />Verbergen</label>
+                </div>
+                <noscript><button type="submit" class="btn btn-sm">Übernehmen</button></noscript>
+                <p class="small muted" style="margin:0">Verborgen: Andere sehen nicht, wann du zuletzt online warst, und du zählst nicht bei „Gerade online“. Moderatoren und Administratoren sehen es weiterhin.</p>
+            </form>
+        }
 
         <form method="post" action="/prefs/postorder" class="card card-pad stack" style="gap:8px" data-enhance="false">
             <AntiforgeryToken />
@@ -95,7 +111,7 @@
     private string? _theme;
     private ForumUser? _user;
     private int _subCount;
-    private bool _orderDesc;
+    private bool _orderDesc, _canInvisible, _invisible;
     [SupplyParameterFromQuery(Name = "saved")] public string? SavedQ { get; set; }
     private List<(long UserId, string Name)> _ignored = new();
     private string? _ignoreMsg;
@@ -120,6 +136,9 @@
             _subCount = (await Subs.ListAsync(_user.UserId)).Count;
             _orderDesc = await Users.GetPrefAsync(_user.UserId, VbForum.Web.Infrastructure.PostOrder.Pref) == "desc";
             if (SavedQ == "order") _message = "Reihenfolge gespeichert.";
+            if (SavedQ == "invisible") _message = "Online-Status gespeichert.";
+            _canInvisible = new Permissions(await Cache.GetAsync()).CanGoInvisible(_user);
+            _invisible = (await Users.GetAsync(_user.UserId)) is { } me && UserRepository.IsInvisible(me);
             _ignored = await Users.NamesAsync(await Users.IgnoreListAsync(_user.UserId));
             _ignoreMsg = IgnoreQ switch
             {

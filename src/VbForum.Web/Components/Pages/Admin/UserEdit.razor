@@ -45,6 +45,8 @@
                         }
                     </div>
                 </div>
+                <label class="toggle-row"><span>Online-Status verbergen<br /><span class="small muted">„Zuletzt aktiv“ und „online“ sind dann nur für Moderatoren und Admins sichtbar. Wird sofort gespeichert.</span></span>
+                    <input type="checkbox" checked="@_invisible" @onchange="ToggleInvisible" /></label>
                 <div class="form-actions"><button type="button" class="btn btn-primary" @onclick="Save">Speichern</button></div>
             </section>
 
@@ -129,8 +131,18 @@
         _name = _u.DisplayName; _email = _u.Email; _group = _u.UserGroupId; _title = HtmlUtil.CleanTitle(_u.UserTitle);
         _customTitle = _u.CustomTitle == 1; _homepage = _u.Homepage; _posts = _u.Posts;
         _member = _u.MemberGroupIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => int.TryParse(x.Trim(), out var i) ? i : 0).Where(i => i > 0).ToHashSet();
+        _invisible = UserRepository.IsInvisible(_u);
         _ban = await Users.BanInfoAsync(Id);
         _content = await Users.ContentCountAsync(Id);
+    }
+
+    private bool _invisible;
+    private async Task ToggleInvisible(ChangeEventArgs e)
+    {
+        _invisible = e.Value is true;
+        await Users.SetOptionAsync(Id, UserRepository.OptionInvisible, _invisible);
+        await Audit.LogAsync(await Current.GetAsync(), "user.invisible", $"{Id} {_u!.DisplayName} {(_invisible ? "an" : "aus")}", "");
+        _msg = _invisible ? "Online-Status wird jetzt verborgen." : "Online-Status ist wieder sichtbar.";
     }
 
     private void ToggleMember(int g) { if (!_member.Remove(g)) _member.Add(g); }

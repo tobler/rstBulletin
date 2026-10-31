@@ -129,6 +129,14 @@ public sealed class Permissions(BoardSnapshot s)
         return s.Moderators.Any(m => m.UserId == u.UserId && ids.Contains(m.ForumId));
     }
 
+    /// <summary>Darf der Benutzer selbst seinen Online-Status verbergen?</summary>
+    public bool CanGoInvisible(ForumUser u) => !u.IsGuest && s.Settings.InvisibleAllowed switch
+    {
+        "all" => true,
+        "staff" => IsAnyModerator(u),
+        _ => u.IsAdmin,
+    };
+
     public bool IsAnyModerator(ForumUser u) => !u.IsGuest && (u.IsAdmin || u.IsSuperMod || s.Moderators.Any(m => m.UserId == u.UserId));
 
     private bool PostingAllowed(Forum f) => (f.Options & s.Bits.Opt(ForumOption.AllowPosting)) != 0;
