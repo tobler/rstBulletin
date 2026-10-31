@@ -44,14 +44,17 @@
             <section class="card card-pad stack">
                 <div class="row" style="justify-content:space-between">
                     <h2 class="card-title" style="margin:0">@_pm.DisplayTitle</h2>
-                    <a class="btn btn-sm" href="/account/pm@(_pm.FolderId == PmRepository.Sent ? "?folder=sent" : "")">← Zurück</a>
+                    <span class="row" style="gap:6px">
+                        @if (_replyTo != null) { <a class="btn btn-sm btn-primary" href="/account/pm/new?reply=@_replyTo.PmId"><Icon Name="reply" />Antworten</a> }
+                        <a class="btn btn-sm" href="/account/pm@(_pm.FolderId == PmRepository.Sent ? "?folder=sent" : "")">← Zurück</a>
+                    </span>
                 </div>
                 @if (_conversation.Count > 1)
                 {
-                    <p class="small muted" style="margin:0">Gesprächsverlauf · @_conversation.Count Nachrichten, die neueste unten</p>
+                    <p class="small muted" style="margin:0">Gesprächsverlauf · @_conversation.Count Nachrichten, die neueste oben</p>
                 }
             </section>
-            @foreach (var m in _conversation)
+            @foreach (var m in Enumerable.Reverse(_conversation))
             {
                 var mine = m.FromUserId == _user!.UserId;
                 var current = m.PmTextId == _pm.PmTextId;
