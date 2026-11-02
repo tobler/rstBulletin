@@ -485,6 +485,9 @@
         _subscribed = await Subs.IsSubscribedAsync(_user.UserId, t.ThreadId);
         Views.Add(t.ThreadId);
         if (!_user.IsGuest && _posts.Items.Count > 0)
+        {
             await Threads.MarkThreadReadAsync(_user.UserId, t.ThreadId, _posts.Items.Max(p => p.Dateline));
+            await Threads.MarkForumReadIfDoneAsync(_user.UserId, t.ForumId, Links.UnreadCutoff(_snap.Settings));
+        }
     }
 }

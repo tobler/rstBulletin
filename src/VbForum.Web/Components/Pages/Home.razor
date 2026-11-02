@@ -106,7 +106,8 @@
         _user = await Current.GetAsync();
         var perms = new Permissions(_snap);
         var reads = await Threads.ForumReadTimesAsync(_user.UserId);
-        var cutoff = Math.Max(Links.UnreadCutoff(_snap.Settings), _user.IsGuest ? 0 : 0);
+        var cutoff = Links.UnreadCutoff(_snap.Settings);
+        var unreadForums = await Threads.UnreadForumIdsAsync(_user.UserId, reads, _snap.Forums.Values.Where(f => perms.CanListThreads(_user, f)), cutoff);
 
         var loose = new List<ForumSummary>();
         foreach (var root in _snap.RootForums.Where(f => perms.IsListed(_user, f)))
@@ -114,10 +115,10 @@
             if (root.IsCategory && perms.CanSeeForum(_user, root))
             {
                 var rows = root.Children.Where(c => perms.IsListed(_user, c))
-                    .Select(c => ForumSummary.Build(c, perms, _user, reads, cutoff)).ToList();
+                    .Select(c => ForumSummary.Build(c, perms, _user, reads, cutoff, unreadForums)).ToList();
                 if (rows.Count > 0) _sections.Add(new Section(root.ForumId, root.DisplayTitle, rows));
             }
-            else loose.Add(ForumSummary.Build(root, perms, _user, reads, cutoff));
+            else loose.Add(ForumSummary.Build(root, perms, _user, reads, cutoff, unreadForums));
         }
         if (loose.Count > 0) _sections.Insert(0, new Section(0, "Foren", loose));
         _online = await Users.OnlineCountAsync();

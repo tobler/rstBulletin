@@ -120,6 +120,42 @@ public sealed class ThreadRepository(Db db)
             .ToDictionary(x => (int)x.Item1, x => x.Item2);
     }
 
+    /// <summary>
+    /// Foren, in denen es wirklich noch ungelesene Themen gibt. Berücksichtigt – anders als nur vb_forumread – auch einzeln
+    /// gelesene Themen (vb_threadread). Geprüft werden nur Kandidaten, deren letzter Beitrag neuer als die Forum-Lesemarke ist.
+    /// </summary>
+    public async Task<HashSet<int>> UnreadForumIdsAsync(long userId, IReadOnlyDictionary<int, long> forumReadTimes,
+        IEnumerable<Forum> forums, long cutoff)
+    {
+        if (userId == 0) return new();
+        var candidates = forums.Where(f => f.LastPost > Math.Max(forumReadTimes.GetValueOrDefault(f.ForumId), cutoff)).Select(f => f.ForumId).Distinct().ToArray();
+        if (candidates.Length == 0) return new();
+        await using var c = await db.OpenAsync();
+        return (await c.QueryAsync<int>($"""
+            SELECT DISTINCT CAST(t.forumid AS SIGNED) FROM {T.Thread} t
+            LEFT JOIN {T.ThreadRead} tr ON tr.threadid = t.threadid AND tr.userid = @uid
+            LEFT JOIN {T.ForumRead} fr ON fr.forumid = t.forumid AND fr.userid = @uid
+            WHERE t.forumid IN @candidates AND t.visible = 1 AND t.open <> 10 AND t.lastpost > @cutoff
+              AND t.lastpost > GREATEST(IFNULL(tr.readtime, 0), IFNULL(fr.readtime, 0))
+            """, new { uid = userId, candidates, cutoff })).ToHashSet();
+    }
+
+    /// <summary>Wie vB: Sind nach dem Lesen eines Themas alle Themen des Forums gelesen, wird das Forum als gelesen markiert.</summary>
+    public async Task MarkForumReadIfDoneAsync(long userId, int forumId, long cutoff)
+    {
+        if (userId == 0) return;
+        await using var c = await db.OpenAsync();
+        var left = await c.ExecuteScalarAsync<long>($"""
+            SELECT COUNT(*) FROM {T.Thread} t
+            LEFT JOIN {T.ThreadRead} tr ON tr.threadid = t.threadid AND tr.userid = @uid
+            LEFT JOIN {T.ForumRead} fr ON fr.forumid = t.forumid AND fr.userid = @uid
+            WHERE t.forumid = @forumId AND t.visible = 1 AND t.open <> 10 AND t.lastpost > @cutoff
+              AND t.lastpost > GREATEST(IFNULL(tr.readtime, 0), IFNULL(fr.readtime, 0))
+            """, new { uid = userId, forumId, cutoff });
+        if (left == 0)
+            await c.ExecuteAsync($"REPLACE INTO {T.ForumRead} (userid, forumid, readtime) VALUES (@uid, @forumId, @now)", new { uid = userId, forumId, now = ForumTime.Now });
+    }
+
     public async Task<long> ThreadReadTimeAsync(long userId, long threadId)
     {
         if (userId == 0) return 0;

@@ -11,7 +11,8 @@ public sealed record ForumSummary(Forum Forum, long Threads, long Posts, long La
 {
     public string Url => Links.Forum(Forum);
 
-    public static ForumSummary Build(Forum f, Permissions perms, ForumUser u, IReadOnlyDictionary<int, long> readTimes, long cutoff)
+    /// <param name="unreadForums">Foren mit tatsächlich ungelesenen Themen (ThreadRepository.UnreadForumIdsAsync); null = nur nach vb_forumread.</param>
+    public static ForumSummary Build(Forum f, Permissions perms, ForumUser u, IReadOnlyDictionary<int, long> readTimes, long cutoff, ISet<int>? unreadForums = null)
     {
         if (perms.ShowsLocked(u, f))
         {
@@ -26,7 +27,8 @@ public sealed record ForumSummary(Forum Forum, long Threads, long Posts, long La
         Walk(f);
         var readable = visible.Where(x => perms.CanListThreads(u, x)).ToList();
         var last = readable.OrderByDescending(x => x.LastPost).FirstOrDefault();
-        bool unread = !u.IsGuest && readable.Any(x => x.LastPost > Math.Max(readTimes.GetValueOrDefault(x.ForumId), cutoff));
+        bool unread = !u.IsGuest && readable.Any(x => x.LastPost > Math.Max(readTimes.GetValueOrDefault(x.ForumId), cutoff) &&
+                                                     (unreadForums == null || unreadForums.Contains(x.ForumId)));
         return new ForumSummary(f, readable.Sum(x => x.ThreadCount), readable.Sum(x => x.ReplyCount), last?.LastPost ?? 0,
             last?.LastThreadId ?? 0, HtmlUtil.CleanTitle(last?.LastThread), HtmlUtil.CleanTitle(last?.LastPoster), last?.LastPosterId ?? 0,
             last?.LastPostId ?? 0, unread, f.Children.Where(c => perms.IsListed(u, c)).ToList());

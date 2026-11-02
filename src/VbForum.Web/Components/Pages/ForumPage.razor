@@ -209,7 +209,8 @@
         _forum = f;
         var reads = await Threads.ForumReadTimesAsync(_user.UserId);
         var cutoff = Links.UnreadCutoff(_snap.Settings);
-        _children = f.Children.Where(c => perms.IsListed(_user, c)).Select(c => ForumSummary.Build(c, perms, _user, reads, cutoff)).ToList();
+        var unreadForums = await Threads.UnreadForumIdsAsync(_user.UserId, reads, _snap.Forums.Values.Where(x => x.ParentIds.Contains(f.ForumId) && perms.CanListThreads(_user, x)), cutoff);
+        _children = f.Children.Where(c => perms.IsListed(_user, c)).Select(c => ForumSummary.Build(c, perms, _user, reads, cutoff, unreadForums)).ToList();
         if (f.IsCategory) return;
 
         _canPost = perms.CanPostThread(_user, f);
