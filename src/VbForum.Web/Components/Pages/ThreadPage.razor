@@ -12,6 +12,7 @@
 @inject PollService Polls
 @inject ReputationService Rep
 @inject UserRepository Users
+@inject AdService Ads
 
 <PageTitle>@(_thread?.DisplayTitle ?? "Thema") – @_snap?.Settings.BoardName</PageTitle>
 
@@ -171,6 +172,7 @@
 
         @foreach (var p in _posts!.Items)
         {
+            _postIndex++;
             var a = _authors.GetValueOrDefault(p.UserId);
             var own = !_user.IsGuest && p.UserId == _user.UserId;
             var ctx = _contexts[p.PostId];
@@ -220,6 +222,7 @@
                     @if (p.Visible == 0) { <div class="post-notice">Dieser Beitrag wartet auf Freigabe durch das Moderationsteam.</div> }
                     @if (p.Visible == 2) { <div class="post-notice">Gelöscht@(string.IsNullOrEmpty(p.DeletedBy) ? "" : $" von {HtmlUtil.CleanTitle(p.DeletedBy)}")@(string.IsNullOrEmpty(p.DeleteReason) ? "" : $": {HtmlUtil.CleanTitle(p.DeleteReason)}")</div> }
                     <div class="post-body">@html</div>
+                    @if (_postIndex == 1 && _adsPostBody.Count > 0) { <AdBox Ad="AdService.Pick(_adsPostBody, _adsShown)" /> }
                     @if (atts.Count > 0)
                     {
                         <div class="attachments" aria-label="Anhänge">
@@ -314,6 +317,10 @@
             {
                 @:</details>
             }
+            @if (_adsThread.Count > 0 && AdService.SlotAfter(_postIndex, _snap.Settings.AdThreadAfter, _snap.Settings.AdThreadEvery) && _postIndex < _posts.Items.Count)
+            {
+                <AdBox Ad="AdService.Pick(_adsThread, _adsShown)" />
+            }
         }
 
         <div class="row" style="justify-content:flex-end">
@@ -374,6 +381,9 @@
     private HashSet<long> _rated = new();
     private HashSet<long> _ignored = new(), _staffIds = new();
     private bool _canWarn, _canBan;
+    private int _postIndex;
+    private List<AdService.Ad> _adsThread = new(), _adsPostBody = new();
+    private readonly HashSet<int> _adsShown = new();
     private string? _ignoreMsg;
     [SupplyParameterFromQuery(Name = "ignore")] public string? IgnoreQ { get; set; }
     private int _page = 1;
@@ -461,6 +471,8 @@
         foreach (var a in _authors.Values)
             _signatures[a.UserId] = await Renderer.RenderSignatureAsync(a.Signature);
         if (_canRate) _rated = await Rep.RatedAsync(_user.UserId, ids);
+        _adsThread = await Ads.MatchingAsync("thread", _user, f);
+        _adsPostBody = await Ads.MatchingAsync("postbody", _user, f);
         if (_isMod)
         {
             _canWarn = InfractionService.CanWarn(_user, _snap);

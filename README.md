@@ -39,6 +39,10 @@ board can keep running in parallel until you switch over.
 - Hide online status ("zuletzt aktiv", online counter) with the vB "invisible" option (`vb_user.options` bit 512): per user
   in the user area (who may use it is configurable: staff, everyone or admins only) or set by admins per user; staff
   still see it.
+- Ads and notices (`vbf_ad`, images in `vbf_asset`): image banners, text ads or third-party HTML code between posts,
+  inside the first post of a page or between threads in the thread list, plus a coloured text notice bar under the
+  menu (optionally dismissible). Per ad: forums, audience (guests/members), start/end date, weight for rotation;
+  impressions and clicks are counted. Placement and ad-free groups (e.g. premium) are set under *Admin › Werbung & Hinweise*.
 - Preferred post order (oldest/newest first) per user; image lightbox with paging (arrow keys, buttons, swipe).
 - Admin area:
   - Board settings, logo and SMTP.
@@ -124,6 +128,7 @@ shows a maintenance page. The setup does not reopen in that case.
 | `vbf_dpkey` | Encryption keys for login cookies, so users stay logged in across redeploys |
 | `vbf_userpref` | Per-user preferences (e.g. dark mode) |
 | `vbf_plan`, `vbf_subscription` | Premium plans and booked subscriptions |
+| `vbf_ad` | Ads and notices (images in `vbf_asset`) |
 
 The only optional structural change to vB tables: under *Admin › Datenbank & Wartung* you can add FULLTEXT indexes on
 `vb_post.pagetext` and `vb_thread.title` for fast search. With several hundred thousand posts this takes a few minutes

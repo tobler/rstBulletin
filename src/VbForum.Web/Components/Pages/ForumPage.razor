@@ -5,6 +5,7 @@
 @inject ThreadRepository Threads
 @inject NavigationManager Nav
 @inject AnnouncementRepository Announcements
+@inject AdService Ads
 
 <PageTitle>@(_forum?.DisplayTitle ?? "Forum") – @_snap?.Settings.BoardName</PageTitle>
 
@@ -128,9 +129,15 @@
                 </div>
 
                 <AnnouncementList Items="_announcements" />
-                @foreach (var t in _sticky.Concat(_result.Items))
+                @{ var rowIndex = 0; var allRows = _sticky.Concat(_result.Items).ToList(); }
+                @foreach (var t in allRows)
                 {
+                    rowIndex++;
                     <ThreadRow Thread="t" PostsPerPage="_snap.Settings.PostsPerPage" />
+                    @if (_adsList.Count > 0 && rowIndex < allRows.Count && AdService.SlotAfter(rowIndex, _snap.Settings.AdForumListAfter, _snap.Settings.AdForumListEvery))
+                    {
+                        <div class="ad-row"><AdBox Ad="AdService.Pick(_adsList, _adsShown)" /></div>
+                    }
                 }
                 @if (_sticky.Count == 0 && _result.Items.Count == 0)
                 {
@@ -152,6 +159,8 @@
 </main>
 
 @code {
+    private List<AdService.Ad> _adsList = new();
+    private readonly HashSet<int> _adsShown = new();
     [Parameter] public int Id { get; set; }
     [Parameter] public string? Slug { get; set; }
     [SupplyParameterFromQuery(Name = "page")] public int? PageQ { get; set; }
@@ -221,6 +230,7 @@
             _result = new PagedResult<ForumThread>(Array.Empty<ForumThread>(), 0, 1, 1);
             return;
         }
+        _adsList = await Ads.MatchingAsync("forumlist", _user, f);
         bool mod = perms.IsModerator(_user, f);
         _page = Math.Max(1, PageQ ?? 1);
         if (_page == 1 && perms.CanSeeForum(_user, f)) _announcements = await Announcements.ActiveForForumAsync(f.ParentIds, _user.UserId);

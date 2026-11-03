@@ -99,6 +99,20 @@ public sealed class BoardSettings
     public IReadOnlySet<int> PremiumForums => ParseIds(PremiumForumIds);
     public int MinSecondsBetweenPosts { get; set; } = 15;
 
+    // ---------- Werbung ----------
+    public bool AdsEnabled { get; set; } = true;
+    /// <summary>Werbung zwischen Beiträgen: nach dem X-ten Beitrag einer Seite (0 = aus) …</summary>
+    public int AdThreadAfter { get; set; } = 1;
+    /// <summary>… und danach alle Y Beiträge erneut (0 = nur einmal pro Seite).</summary>
+    public int AdThreadEvery { get; set; }
+    /// <summary>Werbung in der Themenliste: nach dem X-ten Thema (0 = aus) …</summary>
+    public int AdForumListAfter { get; set; } = 5;
+    /// <summary>… und danach alle Y Themen erneut (0 = nur einmal).</summary>
+    public int AdForumListEvery { get; set; }
+    /// <summary>Werbefreie Gruppen (z. B. Premium), Komma-getrennt. Admins und Moderatoren sehen Werbung immer, damit sie sie prüfen können.</summary>
+    public string AdFreeGroupIds { get; set; } = "";
+    public IReadOnlySet<int> AdFreeGroups => ParseIds(AdFreeGroupIds);
+
     // ---------- Moderation ----------
     /// <summary>Moderatoren (nicht nur Admins) dürfen ermahnen und verwarnen.</summary>
     public bool ModeratorsCanWarn { get; set; } = true;

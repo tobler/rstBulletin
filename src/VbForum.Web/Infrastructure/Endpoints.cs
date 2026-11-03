@@ -385,6 +385,25 @@ public static class Endpoints
         }).DisableAntiforgery();
 
         // Darstellung: hell / dunkel / automatisch – Cookie + beim Benutzer speichern
+        // ---------- Werbung ----------
+
+        app.MapGet("/ad/{id:int}/image", async (int id, HttpContext http, AssetStore assets) =>
+        {
+            var a = await assets.GetAsync($"ad-{id}");
+            if (a == null) return Results.NotFound();
+            http.Response.Headers.CacheControl = "public, max-age=2592000, immutable";
+            return Results.File(a.Data, a.ContentType);
+        });
+
+        app.MapGet("/ad/{id:int}/click", async (int id, AdService ads) =>
+        {
+            var url = await ads.ClickAsync(id);
+            if (url == null) return Results.Redirect("/");
+            // Nur http(s) oder lokale Pfade – keine javascript:-Links o. Ä.
+            if (url.StartsWith('/') && !url.StartsWith("//")) return Results.Redirect(url);
+            return Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme is "http" or "https" ? Results.Redirect(u.ToString()) : Results.Redirect("/");
+        });
+
         // ---------- Ignorier-Liste ----------
 
         app.MapPost("/ignore/{userId:long}", async (long userId, HttpContext http, [FromForm] string? action, [FromForm] string? name,

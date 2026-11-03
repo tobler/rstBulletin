@@ -171,6 +171,17 @@
   });
 })();
 
+// Hinweisleiste wegklicken (Cookie 1 Jahr)
+(function () {
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-dismiss-notice]');
+    if (!b) return;
+    var key = b.getAttribute('data-dismiss-notice');
+    document.cookie = key + '=1; max-age=31536000; path=/; samesite=lax' + (location.protocol === 'https:' ? '; secure' : '');
+    var bar = b.closest('.notice-bar'); if (bar) bar.remove();
+  });
+})();
+
 // Benutzer-Aufklappmenü: bei Klick daneben oder Escape schließen
 (function () {
   document.addEventListener('click', function (e) {

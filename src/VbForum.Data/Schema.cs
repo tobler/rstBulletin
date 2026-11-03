@@ -63,6 +63,31 @@ public sealed class Schema(Db db)
               `rst_rebillingdays` INT NOT NULL DEFAULT 0
             ) DEFAULT CHARSET=utf8mb4;
 
+            CREATE TABLE IF NOT EXISTS {Tables.OwnAd} (
+              `adid` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              `title` VARCHAR(200) NOT NULL DEFAULT '',
+              `position` VARCHAR(20) NOT NULL DEFAULT 'thread',
+              `kind` VARCHAR(10) NOT NULL DEFAULT 'image',
+              `text` TEXT NULL,
+              `html` MEDIUMTEXT NULL,
+              `linkurl` VARCHAR(1000) NOT NULL DEFAULT '',
+              `newtab` TINYINT NOT NULL DEFAULT 1,
+              `imageversion` INT UNSIGNED NOT NULL DEFAULT 0,
+              `alttext` VARCHAR(200) NOT NULL DEFAULT '',
+              `style` VARCHAR(20) NOT NULL DEFAULT 'info',
+              `dismissible` TINYINT NOT NULL DEFAULT 0,
+              `forumids` VARCHAR(1000) NOT NULL DEFAULT '',
+              `audience` VARCHAR(10) NOT NULL DEFAULT 'all',
+              `weight` INT NOT NULL DEFAULT 1,
+              `active` TINYINT NOT NULL DEFAULT 1,
+              `startdate` INT UNSIGNED NOT NULL DEFAULT 0,
+              `enddate` INT UNSIGNED NOT NULL DEFAULT 0,
+              `impressions` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              `clicks` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              `displayorder` INT NOT NULL DEFAULT 0,
+              `created` INT UNSIGNED NOT NULL DEFAULT 0
+            ) DEFAULT CHARSET=utf8mb4;
+
             CREATE TABLE IF NOT EXISTS {Tables.OwnPayment} (
               `paymentid` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
               `dateline` INT UNSIGNED NOT NULL,

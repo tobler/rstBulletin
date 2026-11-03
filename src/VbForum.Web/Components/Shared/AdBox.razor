@@ -1,0 +1,46 @@
+@* Eine Anzeige (Bild, Text oder HTML-Code). Klicks laufen über /ad/{id}/click (Zählung), Links mit rel="sponsored". *@
+@inject AdService Ads
+@if (Ad != null)
+{
+    <aside class="ad ad-@Ad.Position ad-@Ad.Kind" aria-label="Anzeige">
+        <span class="ad-label">Anzeige</span>
+        @switch (Ad.Kind)
+        {
+            case "html":
+                @((MarkupString)(Ad.Html ?? ""))
+                break;
+            case "text":
+                <div class="ad-text">
+                    <span>@Ad.Text</span>
+                    @if (Ad.HasLink) { <a class="btn btn-sm" href="@Ad.ClickUrl" rel="sponsored noopener nofollow" target="@(Ad.NewTab ? "_blank" : null)" data-enhance-nav="false">Mehr erfahren</a> }
+                </div>
+                break;
+            default:
+                @if (Ad.HasImage)
+                {
+                    @if (Ad.HasLink)
+                    {
+                        <a href="@Ad.ClickUrl" rel="sponsored noopener nofollow" target="@(Ad.NewTab ? "_blank" : null)" data-enhance-nav="false">
+                            <img src="@Ad.ImageUrl" alt="@(string.IsNullOrWhiteSpace(Ad.AltText) ? Ad.Title : Ad.AltText)" loading="lazy" />
+                        </a>
+                    }
+                    else
+                    {
+                        <img src="@Ad.ImageUrl" alt="@(string.IsNullOrWhiteSpace(Ad.AltText) ? Ad.Title : Ad.AltText)" loading="lazy" />
+                    }
+                }
+                break;
+        }
+    </aside>
+}
+
+@code {
+    [Parameter] public AdService.Ad? Ad { get; set; }
+    /// <summary>Vorschau im Admin: keine Einblendung zählen.</summary>
+    [Parameter] public bool Preview { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (Ad != null && !Preview) Ads.CountView(Ad.AdId);
+    }
+}

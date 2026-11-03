@@ -51,6 +51,7 @@ public sealed class ForumBackgroundService(ViewCounter views, IServiceProvider s
             try
             {
                 await sp.GetRequiredService<ThreadRepository>().AddViewsAsync(views.Drain());
+                await sp.GetRequiredService<AdService>().FlushViewsAsync();
                 if (++tick % 60 == 0)
                 {
                     var cache = sp.GetRequiredService<BoardCache>();

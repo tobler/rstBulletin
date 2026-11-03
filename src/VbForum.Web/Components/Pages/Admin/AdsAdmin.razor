@@ -1,0 +1,319 @@
+@page "/admin/ads"
+@attribute [Authorize(Policy = "Admin")]
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Forms
+@inject AdService Ads
+@inject AssetStore AssetDb
+@inject BoardCache Cache
+@inject CurrentUser Current
+@inject TokenRepository Audit
+
+<PageTitle>Werbung &amp; Hinweise – Administration</PageTitle>
+
+<main class="page container">
+    <AdminShell Active="ads" Title="Werbung &amp; Hinweise" Subtitle="Banner zwischen Beiträgen, im Beitrag, in der Themenliste und Hinweisleiste unter dem Menü">
+        <Actions><button type="button" class="btn btn-primary" @onclick="New">+ Neue Anzeige</button></Actions>
+        <ChildContent>
+        @if (_msg != null) { <div class="alert alert-ok" role="status">@_msg</div> }
+        @if (_err != null) { <div class="alert alert-err" role="alert">@_err</div> }
+
+        @if (_edit != null)
+        {
+            <section class="card card-pad stack" style="gap:14px">
+                <h2 class="card-title" style="margin:0">@(_edit.AdId > 0 ? "Anzeige bearbeiten" : "Neue Anzeige")</h2>
+                <div class="form-grid">
+                    <div class="field"><label for="ad-t">Name (intern)</label><input id="ad-t" @bind="_edit.Title" maxlength="200" placeholder="z. B. Herbstaktion Glasfaser" /></div>
+                    <div class="field">
+                        <label for="ad-pos">Position</label>
+                        <select id="ad-pos" @bind="_edit.Position" @bind:after="PositionChanged">
+                            @foreach (var (k, l) in AdService.Positions) { <option value="@k">@l</option> }
+                        </select>
+                    </div>
+                    @if (_edit.Position != "notice")
+                    {
+                        <div class="field">
+                            <label for="ad-k">Art</label>
+                            <select id="ad-k" @bind="_edit.Kind">
+                                <option value="image">Bild (Banner) mit Link</option>
+                                <option value="text">Text mit Link</option>
+                                <option value="html">HTML-Code (z. B. von einem Werbenetzwerk)</option>
+                            </select>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="field">
+                            <label for="ad-st">Farbe</label>
+                            <select id="ad-st" @bind="_edit.Style">
+                                <option value="info">Hellblau (Info)</option><option value="accent">Blau (kräftig)</option><option value="warn">Gelb (Achtung)</option>
+                                <option value="danger">Rot (Wichtig)</option><option value="neutral">Grau</option>
+                            </select>
+                        </div>
+                    }
+                </div>
+
+                @if (_edit.Position == "notice" || _edit.Kind == "text")
+                {
+                    <div class="field">
+                        <label for="ad-x">Text</label>
+                        <textarea id="ad-x" rows="3" @bind="_edit.Text" maxlength="1000"></textarea>
+                    </div>
+                }
+                @if (_edit.Position != "notice" && _edit.Kind == "image")
+                {
+                    <div class="row" style="gap:16px;align-items:flex-start;flex-wrap:wrap">
+                        <div class="stack" style="gap:6px">
+                            <span class="small" style="font-weight:600">Bild</span>
+                            @if (_edit.HasImage) { <img src="@_edit.ImageUrl" alt="" style="max-width:360px;max-height:160px;border:1px solid var(--border);border-radius:8px" /> }
+                            else if (_pendingImage != null) { <span class="small muted">Bild ausgewählt (@(_pendingImage.Value.Data.Length / 1024) KB) – wird beim Speichern hochgeladen.</span> }
+                            else { <span class="small muted">Noch kein Bild.</span> }
+                            <label class="file-drop" style="align-self:flex-start"><Icon Name="image" />Bild wählen (JPG, PNG, GIF, WebP, max. 2 MB)<InputFile OnChange="OnImage" accept=".jpg,.jpeg,.png,.gif,.webp" /></label>
+                            <span class="hint">Empfohlen z. B. 728 × 90 (zwischen Beiträgen) oder 468 × 60. Wird auf dem Handy automatisch verkleinert.</span>
+                        </div>
+                        <div class="field" style="flex:1 1 240px"><label for="ad-alt">Alternativtext</label><input id="ad-alt" @bind="_edit.AltText" maxlength="200" /></div>
+                    </div>
+                }
+                @if (_edit.Position != "notice" && _edit.Kind == "html")
+                {
+                    <div class="field">
+                        <label for="ad-h">HTML-Code</label>
+                        <textarea id="ad-h" rows="6" @bind="_edit.Html" style="font-family:monospace;font-size:13px"></textarea>
+                        <span class="hint">Wird unverändert eingebunden (auch Skripte). Nur Code aus vertrauenswürdigen Quellen einfügen.</span>
+                    </div>
+                }
+                @if (_edit.Kind != "html" || _edit.Position == "notice")
+                {
+                    <div class="form-grid">
+                        <div class="field" style="grid-column:1/-1"><label for="ad-l">Link (optional)</label><input id="ad-l" @bind="_edit.LinkUrl" placeholder="https://… oder /thread/123" /></div>
+                    </div>
+                    <label class="toggle-row">Link in neuem Tab öffnen<input type="checkbox" @bind="_edit.NewTab" /></label>
+                }
+                @if (_edit.Position == "notice")
+                {
+                    <label class="toggle-row">Besucher können den Hinweis wegklicken<input type="checkbox" @bind="_edit.Dismissible" /></label>
+                }
+
+                <h3 style="font-size:15px;margin:6px 0 0">Wo und wann</h3>
+                <div class="form-grid">
+                    <div class="field">
+                        <label for="ad-a">Wer sieht die Anzeige?</label>
+                        <select id="ad-a" @bind="_edit.Audience"><option value="all">Alle</option><option value="guests">Nur Gäste</option><option value="members">Nur angemeldete Benutzer</option></select>
+                    </div>
+                    <div class="field"><label for="ad-s">Ab (optional)</label><input id="ad-s" type="date" @bind="_start" /></div>
+                    <div class="field"><label for="ad-e">Bis einschließlich (optional)</label><input id="ad-e" type="date" @bind="_end" /></div>
+                    <div class="field"><label for="ad-w">Gewichtung</label><input id="ad-w" type="number" min="1" max="100" @bind="_edit.Weight" /><span class="hint">Mehrere Anzeigen am selben Platz wechseln sich ab; 2 = doppelt so oft wie 1.</span></div>
+                </div>
+                @if (_edit.Position != "notice")
+                {
+                    <div class="field">
+                        <span class="label">Nur in diesen Foren (inkl. Unterforen) – nichts gewählt = überall</span>
+                        <div class="chips" style="max-height:180px;overflow:auto">
+                            @foreach (var f in _forums)
+                            {
+                                <label class="chip" style="cursor:pointer"><input type="checkbox" checked="@_forumSel.Contains(f.ForumId)" @onchange="() => ToggleForum(f.ForumId)" />@(new string('·', f.Depth))@f.DisplayTitle</label>
+                            }
+                        </div>
+                    </div>
+                }
+                <label class="toggle-row">Aktiv<input type="checkbox" @bind="_edit.Active" /></label>
+                <div class="form-actions">
+                    <button type="button" class="btn" @onclick="() => { _edit = null; _pendingImage = null; }">Abbrechen</button>
+                    <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="SaveAsync">Speichern</button>
+                </div>
+            </section>
+        }
+
+        @foreach (var grp in _ads.GroupBy(a => a.Position).OrderBy(g => Array.FindIndex(AdService.Positions, p => p.Key == g.Key)))
+        {
+            <section class="card">
+                <div class="card-head"><h2>@AdService.PositionLabel(grp.Key)</h2><span class="small muted">@grp.Count()</span></div>
+                @foreach (var a in grp)
+                {
+                    var now = ForumTime.Now;
+                    <div class="thread-row" style="align-items:flex-start">
+                        <div class="stack" style="gap:6px;flex:1 1 380px;min-width:0">
+                            <div class="thread-title-line">
+                                <strong>@(string.IsNullOrWhiteSpace(a.Title) ? $"Anzeige #{a.AdId}" : a.Title)</strong>
+                                @if (!a.Active) { <span class="pill">Aus</span> }
+                                else if (!a.IsRunning(now)) { <span class="pill pill-warn">@(a.StartDate > now ? $"ab {ForumTime.Date(a.StartDate)}" : "abgelaufen")</span> }
+                                else { <span class="pill pill-accent">Läuft</span> }
+                                @if (a.Audience != "all") { <span class="pill">@(a.Audience == "guests" ? "nur Gäste" : "nur Mitglieder")</span> }
+                                @if (a.Forums.Count > 0) { <span class="pill">@a.Forums.Count Foren</span> }
+                            </div>
+                            <span class="thread-sub">@ForumTime.Number(a.Impressions) Einblendungen · @ForumTime.Number(a.Clicks) Klicks · Klickrate @a.CtrText@(a.EndDate > 0 ? $" · bis {ForumTime.Date(a.EndDate)}" : "")</span>
+                            @if (a.Position == "notice")
+                            {
+                                <div class="notice-bar notice-@a.Style" style="border-radius:8px"><div class="container" style="padding:8px 12px"><span class="notice-text">@a.Text</span></div></div>
+                            }
+                            else
+                            {
+                                <div style="max-width:520px"><AdBox Ad="a" Preview="true" /></div>
+                            }
+                        </div>
+                        <div class="row" style="gap:6px">
+                            <button type="button" class="btn btn-sm" @onclick="() => Edit(a)">Bearbeiten</button>
+                            <button type="button" class="btn btn-sm btn-ghost" @onclick="() => ResetStats(a)">Statistik zurücksetzen</button>
+                            <button type="button" class="btn btn-sm btn-ghost" @onclick="() => Delete(a)">Löschen</button>
+                        </div>
+                    </div>
+                }
+            </section>
+        }
+        @if (_ads.Count == 0 && _edit == null) { <div class="card empty">Noch keine Anzeigen oder Hinweise. Oben rechts „+ Neue Anzeige“.</div> }
+
+        <section class="card card-pad stack" style="gap:12px">
+            <h2 class="card-title" style="margin:0">Platzierung &amp; werbefreie Gruppen</h2>
+            <label class="toggle-row">Werbung und Hinweise anzeigen<input type="checkbox" @bind="_s!.AdsEnabled" /></label>
+            <div class="form-grid">
+                <div class="field"><label for="pl-ta">Zwischen Beiträgen: nach Beitrag Nr.</label><input id="pl-ta" type="number" min="0" max="100" @bind="_s.AdThreadAfter" /><span class="hint">Zählt je Seite; 0 = aus</span></div>
+                <div class="field"><label for="pl-te">… danach alle X Beiträge</label><input id="pl-te" type="number" min="0" max="100" @bind="_s.AdThreadEvery" /><span class="hint">0 = nur einmal pro Seite</span></div>
+                <div class="field"><label for="pl-la">Themenliste: nach Thema Nr.</label><input id="pl-la" type="number" min="0" max="100" @bind="_s.AdForumListAfter" /><span class="hint">0 = aus</span></div>
+                <div class="field"><label for="pl-le">… danach alle X Themen</label><input id="pl-le" type="number" min="0" max="100" @bind="_s.AdForumListEvery" /><span class="hint">0 = nur einmal</span></div>
+            </div>
+            <div class="field">
+                <span class="label">Werbefrei für diese Gruppen (z. B. Premium)</span>
+                <div class="chips">
+                    @foreach (var g in _groups)
+                    {
+                        <label class="chip" style="cursor:pointer"><input type="checkbox" checked="@_free.Contains(g.UserGroupId)" @onchange="() => ToggleFree(g.UserGroupId)" />@g.DisplayTitle</label>
+                    }
+                </div>
+                <span class="hint">Administratoren und Super-Moderatoren sehen Werbung immer, damit sie sie prüfen können. Gilt auch für die Hinweisleiste.</span>
+            </div>
+            <div class="form-actions"><button type="button" class="btn btn-primary" @onclick="SaveSettingsAsync">Platzierung speichern</button></div>
+        </section>
+        </ChildContent>
+    </AdminShell>
+</main>
+
+@code {
+    private List<AdService.Ad> _ads = new();
+    private List<Forum> _forums = new();
+    private List<UserGroup> _groups = new();
+    private AdService.Ad? _edit;
+    private HashSet<int> _forumSel = new(), _free = new();
+    private DateTime? _start, _end;
+    private (byte[] Data, string Ext)? _pendingImage;
+    private BoardSettings? _s;
+    private string? _msg, _err;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var snap = await Cache.GetAsync();
+        _forums = snap.Flatten().ToList();
+        _groups = snap.Groups.Values.OrderBy(g => g.UserGroupId).ToList();
+        _s = snap.Settings.Clone();
+        _free = _s.AdFreeGroups.ToHashSet();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => _ads = await Ads.AllAsync();
+
+    private void New() { Open(new AdService.Ad { Position = "thread", Kind = "image" }); }
+    private void Edit(AdService.Ad a) => Open(new AdService.Ad
+    {
+        AdId = a.AdId, Title = a.Title, Position = a.Position, Kind = a.Kind, Text = a.Text, Html = a.Html, LinkUrl = a.LinkUrl, NewTab = a.NewTab,
+        ImageVersion = a.ImageVersion, AltText = a.AltText, Style = a.Style, Dismissible = a.Dismissible, ForumIds = a.ForumIds, Audience = a.Audience,
+        Weight = a.Weight, Active = a.Active, StartDate = a.StartDate, EndDate = a.EndDate, DisplayOrder = a.DisplayOrder, Created = a.Created,
+    });
+
+    private void Open(AdService.Ad a)
+    {
+        _msg = _err = null; _pendingImage = null;
+        _edit = a;
+        _forumSel = a.Forums.ToHashSet();
+        _start = a.StartDate > 0 ? ForumTime.Local(a.StartDate).Date : null;
+        _end = a.EndDate > 0 ? ForumTime.Local(a.EndDate).Date : null;
+    }
+
+    private void PositionChanged() { if (_edit!.Position == "notice") _edit.Kind = "text"; }
+    private void ToggleForum(int id) { if (!_forumSel.Remove(id)) _forumSel.Add(id); }
+    private void ToggleFree(int id) { if (!_free.Remove(id)) _free.Add(id); }
+
+    private async Task OnImage(InputFileChangeEventArgs e)
+    {
+        _err = null;
+        const long max = 2 * 1024 * 1024;
+        if (e.File.Size > max) { _err = "Das Bild darf höchstens 2 MB groß sein."; return; }
+        using var ms = new MemoryStream();
+        await e.File.OpenReadStream(max).CopyToAsync(ms);
+        var data = ms.ToArray();
+        var info = ImageService.Inspect(data);
+        if (info == null) { _err = "Die Datei ist kein unterstütztes Bild."; return; }
+        _pendingImage = (data, info.Extension);
+        if (_edit!.AdId > 0) await StoreImageAsync(_edit.AdId);
+    }
+
+    private async Task StoreImageAsync(int id)
+    {
+        if (_pendingImage is not { } img) return;
+        await AssetDb.SetAsync($"ad-{id}", ImageService.ContentType(img.Ext), img.Data);
+        var v = ForumTime.Now;
+        await Ads.SetImageVersionAsync(id, v);
+        if (_edit != null && _edit.AdId == id) _edit.ImageVersion = v;
+        _pendingImage = null;
+    }
+
+    private static bool ValidLink(string url) =>
+        string.IsNullOrWhiteSpace(url) || (url.StartsWith('/') && !url.StartsWith("//")) ||
+        (Uri.TryCreate(url.Trim(), UriKind.Absolute, out var u) && u.Scheme is "http" or "https");
+
+    private async Task SaveAsync()
+    {
+        _msg = _err = null;
+        var a = _edit!;
+        if (a.Position == "notice") a.Kind = "text";
+        if ((a.Kind == "text") && string.IsNullOrWhiteSpace(a.Text)) { _err = "Bitte einen Text eingeben."; return; }
+        if (a.Kind == "html" && string.IsNullOrWhiteSpace(a.Html)) { _err = "Bitte den HTML-Code einfügen."; return; }
+        if (a.Kind == "image" && !a.HasImage && _pendingImage == null) { _err = "Bitte ein Bild auswählen."; return; }
+        if (!ValidLink(a.LinkUrl)) { _err = "Der Link muss mit https:// (oder http://) bzw. / beginnen."; return; }
+        if (_start.HasValue && _end.HasValue && _end < _start) { _err = "Das Ende liegt vor dem Start."; return; }
+        _busy = true;
+        try
+        {
+            a.ForumIds = a.Position == "notice" ? "" : string.Join(",", _forumSel);
+            a.StartDate = _start.HasValue ? ForumTime.ToUnix(_start.Value.Date) : 0;
+            a.EndDate = _end.HasValue ? ForumTime.ToUnix(_end.Value.Date.AddDays(1)) - 1 : 0;
+            if (string.IsNullOrWhiteSpace(a.Title)) a.Title = a.Position == "notice" ? "Hinweis" : "Anzeige";
+            var id = await Ads.SaveAsync(a);
+            await StoreImageAsync(id);
+            await Audit.LogAsync(await Current.GetAsync(), "ad.save", $"#{id} {a.Title}", "");
+            _edit = null;
+            _msg = "Gespeichert.";
+            await LoadAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Delete(AdService.Ad a)
+    {
+        await Ads.DeleteAsync(a.AdId);
+        await AssetDb.RemoveAsync($"ad-{a.AdId}");
+        await Audit.LogAsync(await Current.GetAsync(), "ad.delete", $"#{a.AdId} {a.Title}", "");
+        _msg = "Gelöscht.";
+        await LoadAsync();
+    }
+
+    private async Task ResetStats(AdService.Ad a)
+    {
+        await Ads.ResetStatsAsync(a.AdId);
+        _msg = "Statistik zurückgesetzt.";
+        await LoadAsync();
+    }
+
+    private async Task SaveSettingsAsync()
+    {
+        _msg = _err = null;
+        var cur = (await Cache.GetAsync()).Settings.Clone();
+        cur.AdsEnabled = _s!.AdsEnabled;
+        cur.AdThreadAfter = Math.Clamp(_s.AdThreadAfter, 0, 100);
+        cur.AdThreadEvery = Math.Clamp(_s.AdThreadEvery, 0, 100);
+        cur.AdForumListAfter = Math.Clamp(_s.AdForumListAfter, 0, 100);
+        cur.AdForumListEvery = Math.Clamp(_s.AdForumListEvery, 0, 100);
+        cur.AdFreeGroupIds = string.Join(",", _free.OrderBy(x => x));
+        await Cache.SaveSettingsAsync(cur);
+        await Audit.LogAsync(await Current.GetAsync(), "ad.settings", "", "");
+        _msg = "Platzierung gespeichert.";
+    }
+}

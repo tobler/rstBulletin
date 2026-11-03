@@ -467,3 +467,25 @@ html[data-theme="dark"] .theme-toggle .moon { display: none; } html[data-theme="
 .mod-menu .menu-pop a.danger { color: var(--danger); }
 .mod-menu .menu-pop > span { display: block; padding: 4px 10px 6px; }
 @media (max-width: 640px) { .post:has(details[open]) .post-aside { border-radius: var(--radius) var(--radius) 0 0; } }
+
+/* ---------- Werbung & Hinweisleiste ---------- */
+.notice-bar { border-bottom: 1px solid var(--border); font-size: 14px; }
+.notice-bar .container { display: flex; align-items: center; gap: 12px; padding-top: 9px; padding-bottom: 9px; }
+.notice-bar .notice-text { flex: 1; min-width: 0; white-space: pre-line; }
+.notice-bar .notice-text a { font-weight: 600; margin-left: 6px; color: inherit; text-decoration: underline; }
+.notice-bar .notice-close { border: 0; background: transparent; color: inherit; font-size: 22px; line-height: 1; cursor: pointer; padding: 0 4px; opacity: .7; }
+.notice-bar .notice-close:hover { opacity: 1; }
+.notice-info { background: var(--accent-soft); color: var(--ink); }
+.notice-accent { background: var(--accent); color: #fff; border-bottom-color: transparent; }
+.notice-warn { background: var(--warn-bg); color: var(--warn-fg); }
+.notice-danger { background: var(--danger-bg); color: var(--danger); }
+.notice-neutral { background: var(--chip); color: var(--ink); }
+.ad { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px 16px 14px; overflow: hidden; }
+.ad .ad-label { position: absolute; top: 5px; left: 10px; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.ad img { max-width: 100%; height: auto; display: block; border-radius: 6px; }
+.ad a { display: block; max-width: 100%; }
+.ad-text .ad-text { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; text-align: center; white-space: pre-line; }
+.ad-text .ad-text a { display: inline-flex; }
+.ad.ad-postbody { margin-top: 4px; background: var(--head); border-style: dashed; }
+.ad-row { padding: 10px 20px; border-bottom: 1px solid var(--border-soft); background: var(--card); }
+.ad-row .ad { border: 0; padding-top: 18px; }

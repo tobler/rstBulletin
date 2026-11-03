@@ -1,0 +1,34 @@
+@* Hinweisleiste(n) unter dem Menü. Wegklickbare Hinweise werden per Cookie „vbf-notice-{id}-{version}“ ausgeblendet. *@
+@inject AdService Ads
+@inject CurrentUser Current
+@foreach (var n in _notices)
+{
+    <div class="notice-bar notice-@n.Style" role="note" data-notice="@Key(n)">
+        <div class="container">
+            <span class="notice-text">
+                @n.Text
+                @if (n.HasLink) { <a href="@n.ClickUrl" rel="noopener nofollow" target="@(n.NewTab ? "_blank" : null)" data-enhance-nav="false">Mehr</a> }
+            </span>
+            @if (n.Dismissible) { <button type="button" class="notice-close" data-dismiss-notice="@Key(n)" aria-label="Hinweis schließen">×</button> }
+        </div>
+    </div>
+}
+
+@code {
+    [CascadingParameter] public HttpContext? HttpContext { get; set; }
+    private List<AdService.Ad> _notices = new();
+
+    private static string Key(AdService.Ad n) => $"vbf-notice-{n.AdId}-{n.Created % 100000}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var u = await Current.GetAsync();
+            _notices = (await Ads.MatchingAsync("notice", u, null))
+                .Where(n => !n.Dismissible || HttpContext?.Request.Cookies.ContainsKey(Key(n)) != true).ToList();
+            foreach (var n in _notices) Ads.CountView(n.AdId);
+        }
+        catch { /* DB nicht eingerichtet */ }
+    }
+}

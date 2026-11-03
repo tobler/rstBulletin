@@ -132,6 +132,7 @@ public sealed class Tables(string p)
     public const string OwnPlan = "`vbf_plan`";
     public const string OwnSubscription = "`vbf_subscription`";
     public const string OwnPayment = "`vbf_payment`";
+    public const string OwnAd = "`vbf_ad`";
 }
 
 public sealed class Db(DbSettingsStore store)
