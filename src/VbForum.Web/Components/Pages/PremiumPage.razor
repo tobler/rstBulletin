@@ -22,7 +22,7 @@
             <h2 class="card-title" style="margin:0"><Icon Name="star" /> Dein Premium-Zugang</h2>
             @foreach (var s in _active)
             {
-                <p style="margin:0">@(string.IsNullOrEmpty(s.PlanTitle) ? "Premium" : s.PlanTitle): <strong>@(s.EndDate == 0 ? "lebenslang" : $"gültig bis {ForumTime.Date(s.EndDate)}")</strong></p>
+                <p style="margin:0">@(string.IsNullOrEmpty(s.PlanTitle) ? "Premium" : s.PlanTitle): <strong>@(s.EndDate > 0 ? $"gültig bis {ForumTime.Date(s.EndDate)}" : s.IsLifetime ? "lebenslang" : s.PaidUntil > 0 ? $"bezahlt bis {ForumTime.Date(s.PaidUntil)}" : "aktiv")</strong></p>
             }
             @if (_forum != null) { <p style="margin:0"><a class="btn btn-primary" href="@Links.Forum(_forum)">Weiter zu „@_forum.DisplayTitle“</a></p> }
         </section>

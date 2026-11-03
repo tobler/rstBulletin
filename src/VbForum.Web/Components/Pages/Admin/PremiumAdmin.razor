@@ -111,7 +111,7 @@
                                     <td><a href="/admin/users/@s.UserId">@HtmlUtil.CleanTitle(s.Username)</a></td>
                                     <td class="small">@(string.IsNullOrEmpty(s.PlanTitle) ? $"Gruppe {_snap.Groups.GetValueOrDefault(s.GroupId)?.DisplayTitle}" : s.PlanTitle)</td>
                                     <td class="small nowrap">@ForumTime.Date(s.StartDate)</td>
-                                    <td class="small nowrap">@(s.EndDate == 0 ? "lebenslang" : ForumTime.Date(s.EndDate))</td>
+                                    <td class="small" title="@(s.IsOpenEndedPayment ? "Ohne festes Ende: rstpay meldet Kündigung bzw. Ablauf, dann endet der Zugang automatisch." : null)">@s.EndText</td>
                                     <td>@if (active) { <span class="pill pill-accent">Aktiv</span> } else { <span class="pill">@StatusText(s)</span> }</td>
                                     <td class="small"><code>@s.Reference</code> <span class="muted">@s.Source</span></td>
                                     <td>@if (active) { <button type="button" class="btn btn-sm btn-ghost btn-danger" @onclick="() => Revoke(s)">Beenden</button> }</td>

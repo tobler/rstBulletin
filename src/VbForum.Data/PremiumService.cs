@@ -135,14 +135,28 @@ public sealed class PremiumService(Db db, BoardCache cache, ForumAdminService ad
         public long Created { get; set; }
         public long Updated { get; set; }
 
+        /// <summary>Laufzeit des gebuchten Modells in Monaten (0 = lebenslang, -1 = kein Modell bekannt).</summary>
+        public int PlanMonths { get; set; } = -1;
+
         public bool IsActive(long now) => Status == "active" && (EndDate == 0 || EndDate > now);
+
+        /// <summary>Ohne Enddatum, weil rstpay das Ende selbst meldet (Kündigung/Ablauf) – kein echtes „lebenslang“.</summary>
+        public bool IsOpenEndedPayment => EndDate == 0 && PlanMonths != 0 && Source == "rstpay";
+        public bool IsLifetime => EndDate == 0 && !IsOpenEndedPayment;
+        /// <summary>Erste bezahlte Laufzeit laut Modell (nur Anzeige).</summary>
+        public long PaidUntil => PlanMonths > 0 ? ForumTime.ToUnix(ForumTime.Local(StartDate).AddMonths(PlanMonths)) : 0;
+
+        public string EndText => EndDate > 0 ? ForumTime.Date(EndDate)
+            : IsLifetime ? "lebenslang"
+            : PaidUntil > 0 ? $"bis Kündigung (bezahlt bis {ForumTime.Date(PaidUntil)})" : "bis Kündigung";
     }
 
     private const string SubCols = """
         CAST(s.subscriptionid AS SIGNED) AS SubscriptionId, CAST(s.userid AS SIGNED) AS UserId, IFNULL(u.username, '') AS Username,
         CAST(s.planid AS SIGNED) AS PlanId, IFNULL(p.title, '') AS PlanTitle, CAST(s.groupid AS SIGNED) AS GroupId,
         CAST(s.startdate AS SIGNED) AS StartDate, CAST(s.enddate AS SIGNED) AS EndDate, s.status AS Status, s.reference AS Reference,
-        s.source AS Source, CAST(s.created AS SIGNED) AS Created, CAST(s.updated AS SIGNED) AS Updated
+        s.source AS Source, CAST(s.created AS SIGNED) AS Created, CAST(s.updated AS SIGNED) AS Updated,
+        CAST(IFNULL(p.months, -1) AS SIGNED) AS PlanMonths
         """;
 
     private string SubFrom => $"FROM {Tables.OwnSubscription} s LEFT JOIN {db.T.User} u ON u.userid = s.userid LEFT JOIN {Tables.OwnPlan} p ON p.planid = s.planid";
@@ -176,10 +190,10 @@ public sealed class PremiumService(Db db, BoardCache cache, ForumAdminService ad
         await using var c = await db.OpenAsync();
         var r = await c.QueryFirstAsync<(long, long, long)>($"""
             SELECT
-              CAST(IFNULL(SUM(status = 'active' AND (enddate = 0 OR enddate > @now)), 0) AS SIGNED),
-              CAST(IFNULL(SUM(status = 'active' AND enddate = 0), 0) AS SIGNED),
-              CAST(IFNULL(SUM(status = 'active' AND enddate > @now AND enddate < @soon), 0) AS SIGNED)
-            FROM {Tables.OwnSubscription}
+              CAST(IFNULL(SUM(s.status = 'active' AND (s.enddate = 0 OR s.enddate > @now)), 0) AS SIGNED),
+              CAST(IFNULL(SUM(s.status = 'active' AND s.enddate = 0 AND (p.months = 0 OR (p.months IS NULL AND s.source <> 'rstpay'))), 0) AS SIGNED),
+              CAST(IFNULL(SUM(s.status = 'active' AND s.enddate > @now AND s.enddate < @soon), 0) AS SIGNED)
+            FROM {Tables.OwnSubscription} s LEFT JOIN {Tables.OwnPlan} p ON p.planid = s.planid
             """, new { now, soon = now + 7 * 86400 });
         return new Counts(r.Item1, r.Item2, r.Item3);
     }
