@@ -2,6 +2,7 @@
 @inject BoardCache Cache
 @inject CurrentUser Current
 @inject PremiumService Premium
+@inject RstPayService RstPay
 @inject NavigationManager Nav
 
 <PageTitle>Premium – @_snap?.Settings.BoardName</PageTitle>
@@ -25,11 +26,20 @@
             {
                 <div class="row" style="justify-content:space-between;gap:10px;flex-wrap:wrap">
                     <p style="margin:0">
-                        @(string.IsNullOrEmpty(s.PlanTitle) ? "Premium" : s.PlanTitle): <strong>@(s.EndDate > 0 ? $"gültig bis {ForumTime.Date(s.EndDate)}" : s.IsLifetime ? "lebenslang" : s.PaidUntil > 0 ? $"bezahlt bis {ForumTime.Date(s.PaidUntil)}" : "aktiv")</strong>
-                        @if (s.Cancelled > 0) { <br /><span class="small muted">Gekündigt am @ForumTime.Date(s.Cancelled) – wird nicht mehr verlängert. Dein Zugang bleibt bis zum Ende der bezahlten Zeit.</span> }
+                        @(string.IsNullOrEmpty(s.PlanTitle) ? "Premium" : s.PlanTitle): <strong>@EndLabel(s)</strong>
+                        @if (_status.TryGetValue(s.SubscriptionId, out var st) && st.Ok)
+                        {
+                            <br />
+                            <span class="small muted">
+                                @if (st.IsActive) { @($"Nächste Abbuchung am {st.NextRebill:dd.MM.yyyy}{(st.AmountText.Length > 0 ? $" ({st.AmountText})" : "")}{(st.RebillPeriodDays > 0 ? $", danach alle {st.RebillPeriodDays} Tage" : "")} – bis du kündigst.") }
+                                else if (st.IsCanceled) { @($"Gekündigt – wird nicht mehr verlängert. Dein Zugang bleibt bis {st.NextRebill:dd.MM.yyyy}.") }
+                                else if (st.IsEnded) { @("Das Abo ist beendet.") }
+                            </span>
+                        }
+                        else if (s.Cancelled > 0) { <br /><span class="small muted">Gekündigt am @ForumTime.Date(s.Cancelled) – wird nicht mehr verlängert. Dein Zugang bleibt bis zum Ende der bezahlten Zeit.</span> }
                         else if (s.CanCancel(_now)) { <br /><span class="small muted">Verlängert sich automatisch, bis du kündigst.</span> }
                     </p>
-                    @if (s.CanCancel(_now))
+                    @if (s.CanCancel(_now) && !(_status.TryGetValue(s.SubscriptionId, out var st2) && st2.Ok && !st2.IsActive))
                     {
                         <form method="post" action="/premium/cancel/@s.SubscriptionId" class="inline" data-enhance="false">
                             <AntiforgeryToken />
@@ -67,6 +77,15 @@
     private ForumUser? _user;
     private Forum? _forum;
     private List<PremiumService.Subscription> _active = new();
+    private readonly Dictionary<long, RstPayService.MembershipStatus> _status = new();
+
+    /// <summary>Kurzinfo zur Laufzeit – bei rstpay-Abos mit dem Live-Status (nächste Abbuchung bzw. Zugang bis).</summary>
+    private string EndLabel(PremiumService.Subscription s)
+    {
+        if (_status.TryGetValue(s.SubscriptionId, out var st) && st.Ok && st.NextRebill is DateTime d)
+            return st.IsActive ? "aktiv" : st.IsCanceled ? $"gültig bis {d:dd.MM.yyyy}" : "beendet";
+        return s.EndDate > 0 ? $"gültig bis {ForumTime.Date(s.EndDate)}" : s.IsLifetime ? "lebenslang" : s.PaidUntil > 0 ? $"bezahlt bis {ForumTime.Date(s.PaidUntil)}" : "aktiv";
+    }
 
     private string ReturnUrl => "/premium" + (_forum != null ? $"?forum={_forum.ForumId}" : "");
 
@@ -87,6 +106,13 @@
             {
                 var now = ForumTime.Now;
                 _active = (await Premium.UserSubscriptionsAsync(_user.UserId)).Where(s => s.IsActive(now)).ToList();
+                // Live-Status bei rstpay (nächste Abbuchung, gekündigt …) für wiederkehrende Abos
+                foreach (var s in _active.Where(s => s.Source == "rstpay" && s.PlanMonths != 0))
+                {
+                    var st = await RstPay.MembershipStatusAsync(s, fresh: CancelQ != null);
+                    _status[s.SubscriptionId] = st;
+                    if (st.Ok && !st.IsActive && s.Cancelled == 0) s.Cancelled = ForumTime.Now;
+                }
             }
         }
         finally { _loaded = true; }

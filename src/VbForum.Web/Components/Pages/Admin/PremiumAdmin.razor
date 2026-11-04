@@ -114,7 +114,20 @@
                                     <td class="small" title="@(s.IsOpenEndedPayment ? "Ohne festes Ende: rstpay meldet Kündigung bzw. Ablauf, dann endet der Zugang automatisch." : null)">@s.EndText@if (s.Cancelled > 0) { <br /><span class="pill pill-warn">gekündigt am @ForumTime.Date(s.Cancelled)</span> }</td>
                                     <td>@if (active) { <span class="pill pill-accent">Aktiv</span> } else { <span class="pill">@StatusText(s)</span> }</td>
                                     <td class="small"><code>@s.Reference</code> <span class="muted">@s.Source</span></td>
-                                    <td>@if (active) { <button type="button" class="btn btn-sm btn-ghost btn-danger" @onclick="() => Revoke(s)">Beenden</button> }</td>
+                                    <td class="nowrap">
+                                        @if (s.Source == "rstpay" && s.PlanMonths != 0)
+                                        {
+                                            <button type="button" class="btn btn-sm btn-ghost" title="Abo-Status bei rstpay abfragen" @onclick="() => CheckStatus(s)">Status</button>
+                                        }
+                                        @if (active) { <button type="button" class="btn btn-sm btn-ghost btn-danger" @onclick="() => Revoke(s)">Beenden</button> }
+                                        @if (_rstStatus.TryGetValue(s.SubscriptionId, out var rs))
+                                        {
+                                            <div class="small @(rs.Ok ? "" : "muted")" style="white-space:normal;max-width:260px">
+                                                @if (rs.Ok) { @($"rstpay: {rs.StatusText}{(rs.NextRebill is DateTime d ? (rs.IsActive ? $", nächste Abbuchung {d:dd.MM.yyyy}" : $", Zugang bis {d:dd.MM.yyyy}") : "")}{(rs.AmountText.Length > 0 ? $" ({rs.AmountText}" + (rs.RebillPeriodDays > 0 ? $" / {rs.RebillPeriodDays} Tage)" : ")") : "")}") }
+                                                else { @($"rstpay: {rs.Error}") }
+                                            </div>
+                                        }
+                                    </td>
                                 </tr>
                             }
                             @if (_subs?.Items.Count == 0) { <tr><td colspan="7" class="empty">Keine Abos gefunden.</td></tr> }
@@ -487,6 +500,9 @@
         _grantUser = ""; _grantUntil = null;
         await LoadSubsAsync(1);
     }
+
+    private readonly Dictionary<long, RstPayService.MembershipStatus> _rstStatus = new();
+    private async Task CheckStatus(PremiumService.Subscription s) => _rstStatus[s.SubscriptionId] = await RstPay.MembershipStatusAsync(s, fresh: true);
 
     private async Task Revoke(PremiumService.Subscription s)
     {

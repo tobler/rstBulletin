@@ -190,6 +190,12 @@ stored in the database, never in the code. For plans with the payment mode "rstp
    `rebilling`, `param1` = user ID, `param2` = user name).
 2. It redirects the user to `/payment/{session}`.
 
+The session ID is stored with the subscription (from the callback parameter `sessionid` if rstpay sends it, otherwise
+the last session the forum requested for that user). With it, customers can cancel a recurring subscription on
+`/premium` (`/api/cancelmembership`), and the forum shows the live status from `/api/membershipstatus` (next rebilling,
+cancelled until …) to the customer and, on demand, in the admin subscriber list. Access still ends only when rstpay
+sends `cancel`.
+
 The callback URL shown there (`/rstpay/callback/<secret token>`) goes into rstpay. It accepts the same parameters and
 actions as the former PHP script and answers `OK <transaction_id>` or `NOK`. Group numbers are configurable.
 

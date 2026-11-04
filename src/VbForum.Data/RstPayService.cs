@@ -99,6 +99,75 @@ public sealed class RstPayService(Db db, BoardCache cache, PremiumService premiu
             await premium.SetRstSessionAsync(sub.SubscriptionId, session);
     }
 
+    /// <summary>Session-ID der Buchung: gespeichert oder (ältere Abos) die letzte vom Forum angeforderte Session vor dem Abo-Start.</summary>
+    private async Task<string> SessionForAsync(PremiumService.Subscription sub)
+    {
+        if (!string.IsNullOrWhiteSpace(sub.RstSession)) return sub.RstSession;
+        await using var c = await db.OpenAsync();
+        return await c.ExecuteScalarAsync<string?>($"""
+            SELECT transaction_id FROM {Tables.OwnPayment}
+            WHERE action = 'session' AND userid = @uid AND transaction_id <> '' AND dateline <= @start + 86400
+            ORDER BY dateline DESC, paymentid DESC LIMIT 1
+            """, new { uid = sub.UserId, start = sub.StartDate }) ?? "";
+    }
+
+    public sealed record MembershipStatus(bool Ok, string? Status = null, DateTime? NextRebill = null, int? DaysUntilNextRebill = null,
+        int? RebillPeriodDays = null, long? RebillAmount = null, string? Currency = null, DateTime? StartDate = null, string? Error = null)
+    {
+        public bool IsActive => Status == "active";
+        public bool IsCanceled => Status == "canceled";
+        public bool IsEnded => Status == "ended";
+        public string AmountText => RebillAmount is long a ? (a / 100m).ToString("N2", CultureInfo.GetCultureInfo("de-DE")) + (Currency is null or "EUR" ? " €" : " " + Currency) : "";
+        public string StatusText => Status switch { "active" => "aktiv", "canceled" => "gekündigt", "ended" => "beendet", _ => Status ?? "?" };
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime At, MembershipStatus Status)> StatusCache = new();
+    private static readonly HttpClient StatusHttp = new() { Timeout = TimeSpan.FromSeconds(6) };
+
+    /// <summary>Abo-Status bei rstpay abfragen (api/membershipstatus, Antwort „OK“ + key=value-Zeilen oder „ERROR: …“). 5 Minuten gecacht.</summary>
+    public async Task<MembershipStatus> MembershipStatusAsync(PremiumService.Subscription sub, bool fresh = false)
+    {
+        var s = (await cache.GetAsync()).Settings;
+        if (!s.RstPayConfigured) return new(false, Error: "rstpay ist nicht eingerichtet.");
+        var session = await SessionForAsync(sub);
+        if (string.IsNullOrWhiteSpace(session)) return new(false, Error: "Keine rstpay-Session zu diesem Abo bekannt.");
+        if (!fresh && StatusCache.TryGetValue(session, out var hit) && DateTime.UtcNow - hit.At < TimeSpan.FromMinutes(5)) return hit.Status;
+
+        static string E(string v) => Uri.EscapeDataString(v);
+        var url = $"{s.RstPayBaseUrl.TrimEnd('/')}/api/membershipstatus?sessionid={E(session)}&merchantid={E(s.RstPayMerchantId)}&merchantkey={E(s.RstPayMerchantKey)}";
+        MembershipStatus result;
+        try
+        {
+            using var resp = await StatusHttp.GetAsync(url);
+            var body = (await resp.Content.ReadAsStringAsync()).Trim();
+            result = ParseStatus(body);
+        }
+        catch (Exception ex)
+        {
+            result = new(false, Error: "rstpay nicht erreichbar – " + (ex is TaskCanceledException ? "Zeitüberschreitung" : ex.GetBaseException().Message));
+        }
+        StatusCache[session] = (DateTime.UtcNow, result);
+        // Beim Kunden direkt in rstpay gekündigt → auch im Forum als gekündigt vermerken
+        if (result.Ok && (result.IsCanceled || result.IsEnded) && sub.Cancelled == 0)
+            await premium.MarkCancelledAsync(sub.SubscriptionId);
+        return result;
+    }
+
+    public static MembershipStatus ParseStatus(string body)
+    {
+        var lines = body.Replace("\r", "").Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (lines.Length == 0) return new(false, Error: "Leere Antwort von rstpay.");
+        if (!lines[0].Equals("OK", StringComparison.OrdinalIgnoreCase))
+            return new(false, Error: lines[0].Length > 200 ? lines[0][..200] : lines[0]);
+        var kv = lines.Skip(1).Select(l => l.Split('=', 2)).Where(p => p.Length == 2)
+            .ToDictionary(p => p[0].Trim().ToLowerInvariant(), p => p[1].Trim());
+        DateTime? D(string k) => kv.TryGetValue(k, out var v) && DateTime.TryParseExact(v, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null;
+        int? I(string k) => kv.TryGetValue(k, out var v) && int.TryParse(v, out var n) ? n : null;
+        long? L(string k) => kv.TryGetValue(k, out var v) && long.TryParse(v, out var n) ? n : null;
+        return new(true, kv.GetValueOrDefault("status")?.ToLowerInvariant(), D("nextrebill"), I("daysuntilnextrebill"), I("rebillperioddays"),
+            L("rebillamount"), kv.GetValueOrDefault("currency"), D("startdate"));
+    }
+
     public sealed record CancelResult(bool Ok, string Message, string? Detail = null);
 
     /// <summary>Abo bei rstpay kündigen (api/cancelmembership). Antworten: „OK: …“ oder „ERROR: …“ als Klartext.</summary>
@@ -106,16 +175,7 @@ public sealed class RstPayService(Db db, BoardCache cache, PremiumService premiu
     {
         var s = (await cache.GetAsync()).Settings;
         if (!s.RstPayConfigured) return new(false, "Die Kündigung ist gerade nicht möglich. Bitte wende dich an das Team.", "rstpay ist nicht eingerichtet.");
-        var session = sub.RstSession;
-        if (string.IsNullOrWhiteSpace(session))
-        {
-            await using var c = await db.OpenAsync();
-            session = await c.ExecuteScalarAsync<string?>($"""
-                SELECT transaction_id FROM {Tables.OwnPayment}
-                WHERE action = 'session' AND userid = @uid AND transaction_id <> '' AND dateline <= @start + 86400
-                ORDER BY dateline DESC, paymentid DESC LIMIT 1
-                """, new { uid = sub.UserId, start = sub.StartDate }) ?? "";
-        }
+        var session = await SessionForAsync(sub);
         if (string.IsNullOrWhiteSpace(session))
             return new(false, "Zu diesem Abo ist keine rstpay-Buchung bekannt. Bitte wende dich an das Team.", "Keine Session-ID gespeichert.");
 
