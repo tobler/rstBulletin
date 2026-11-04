@@ -517,6 +517,24 @@ public static class Endpoints
             return Back(http, "/account/subscriptions");
         });
 
+        // Abo bei rstpay kündigen (nur eigenes Abo; Admins dürfen jedes kündigen)
+        app.MapPost("/premium/cancel/{subscriptionId:long}", async (long subscriptionId, HttpContext http, PremiumService premium, RstPayService rstpay, TokenRepository audit) =>
+        {
+            var u = await http.ForumUserAsync();
+            if (u.IsGuest) return Results.LocalRedirect("/login?returnUrl=/premium");
+            var sub = await premium.SubscriptionAsync(subscriptionId);
+            if (sub == null || (sub.UserId != u.UserId && !u.IsAdmin)) return Results.NotFound();
+            var back = sub.UserId == u.UserId ? "/premium" : $"/admin/premium";
+            if (!sub.CanCancel(ForumTime.Now)) return Results.LocalRedirect($"{back}?cancel=notpossible");
+            var r = await rstpay.CancelMembershipAsync(sub, u);
+            await audit.LogAsync(u, "premium.cancel", $"Abo {sub.SubscriptionId} von {sub.Username}: {r.Detail}", http.ClientIp());
+            var code = r.Ok ? (r.Detail?.Contains("already", StringComparison.OrdinalIgnoreCase) == true ? "already" : "ok")
+                : r.Detail?.Contains("No membership", StringComparison.OrdinalIgnoreCase) == true ? "nomembership"
+                : r.Detail?.Contains("Booking not found", StringComparison.OrdinalIgnoreCase) == true || r.Detail?.Contains("Membership not found", StringComparison.OrdinalIgnoreCase) == true ? "notfound"
+                : "failed";
+            return Results.LocalRedirect($"{back}?cancel={code}");
+        });
+
         app.MapPost("/theme", async (HttpContext http, [FromForm] string? theme, UserRepository users) =>
         {
             var t = Theme.Normalize(theme);

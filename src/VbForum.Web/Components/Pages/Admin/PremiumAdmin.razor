@@ -111,7 +111,7 @@
                                     <td><a href="/admin/users/@s.UserId">@HtmlUtil.CleanTitle(s.Username)</a></td>
                                     <td class="small">@(string.IsNullOrEmpty(s.PlanTitle) ? $"Gruppe {_snap.Groups.GetValueOrDefault(s.GroupId)?.DisplayTitle}" : s.PlanTitle)</td>
                                     <td class="small nowrap">@ForumTime.Date(s.StartDate)</td>
-                                    <td class="small" title="@(s.IsOpenEndedPayment ? "Ohne festes Ende: rstpay meldet Kündigung bzw. Ablauf, dann endet der Zugang automatisch." : null)">@s.EndText</td>
+                                    <td class="small" title="@(s.IsOpenEndedPayment ? "Ohne festes Ende: rstpay meldet Kündigung bzw. Ablauf, dann endet der Zugang automatisch." : null)">@s.EndText@if (s.Cancelled > 0) { <br /><span class="pill pill-warn">gekündigt am @ForumTime.Date(s.Cancelled)</span> }</td>
                                     <td>@if (active) { <span class="pill pill-accent">Aktiv</span> } else { <span class="pill">@StatusText(s)</span> }</td>
                                     <td class="small"><code>@s.Reference</code> <span class="muted">@s.Source</span></td>
                                     <td>@if (active) { <button type="button" class="btn btn-sm btn-ghost btn-danger" @onclick="() => Revoke(s)">Beenden</button> }</td>
@@ -138,7 +138,7 @@
         else if (_tab == "payments")
         {
             <section class="card">
-                <div class="card-head"><h2>Protokoll rstpay</h2><span class="small muted">die letzten 200 · <code>session</code> = Anfrage beim Klick auf „Jetzt buchen“, alle anderen = Rückmeldungen von rstpay</span></div>
+                <div class="card-head"><h2>Protokoll rstpay</h2><span class="small muted">die letzten 200 · <code>session</code> = Anfrage beim Klick auf „Jetzt buchen“, <code>cancel_request</code> = Kündigung durch den Kunden, alle anderen = Rückmeldungen von rstpay</span></div>
                 <div class="table-wrap">
                     <table class="table">
                         <thead><tr><th>Zeit</th><th>Aktion</th><th>Benutzer</th><th class="num">Betrag</th><th>Zahler</th><th>Transaktion</th><th>Ergebnis</th><th class="hide-mobile">IP</th></tr></thead>
@@ -147,7 +147,7 @@
                             {
                                 <tr>
                                     <td class="small nowrap">@ForumTime.Full(r.Dateline)</td>
-                                    <td><code>@r.Action</code>@if (r.Action == "session") { <div class="small muted">ausgehend</div> }</td>
+                                    <td><code>@r.Action</code>@if (r.Action is "session" or "cancel_request") { <div class="small muted">ausgehend</div> }</td>
                                     <td class="small">@if (r.UserId > 0) { <a href="/admin/users/@r.UserId">@HtmlUtil.CleanTitle(r.Username)</a> } else { <span class="muted">@r.Param1</span> }</td>
                                     <td class="num small">@r.Amount</td>
                                     <td class="small">@r.Payer @r.Country</td>

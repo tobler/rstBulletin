@@ -11,6 +11,7 @@
     <div class="page-head"><div><h1>Premium-Mitgliedschaft</h1><p>Voller Zugang zu allen Premium-Bereichen des Forums.</p></div></div>
 
     @if (!string.IsNullOrEmpty(Error)) { <div class="alert alert-err" role="alert">@Error</div> }
+    @if (_cancelMsg != null) { <div class="alert @(CancelQ is "ok" or "already" ? "alert-ok" : "alert-err")" role="status">@_cancelMsg</div> }
     @if (Done == "1")
     {
         <div class="alert alert-ok" role="status">Danke für deine Buchung! Sobald rstpay die Zahlung bestätigt, wird dein Zugang freigeschaltet – meist innerhalb weniger Sekunden. Lade die Seite bei Bedarf neu.</div>
@@ -22,7 +23,20 @@
             <h2 class="card-title" style="margin:0"><Icon Name="star" /> Dein Premium-Zugang</h2>
             @foreach (var s in _active)
             {
-                <p style="margin:0">@(string.IsNullOrEmpty(s.PlanTitle) ? "Premium" : s.PlanTitle): <strong>@(s.EndDate > 0 ? $"gültig bis {ForumTime.Date(s.EndDate)}" : s.IsLifetime ? "lebenslang" : s.PaidUntil > 0 ? $"bezahlt bis {ForumTime.Date(s.PaidUntil)}" : "aktiv")</strong></p>
+                <div class="row" style="justify-content:space-between;gap:10px;flex-wrap:wrap">
+                    <p style="margin:0">
+                        @(string.IsNullOrEmpty(s.PlanTitle) ? "Premium" : s.PlanTitle): <strong>@(s.EndDate > 0 ? $"gültig bis {ForumTime.Date(s.EndDate)}" : s.IsLifetime ? "lebenslang" : s.PaidUntil > 0 ? $"bezahlt bis {ForumTime.Date(s.PaidUntil)}" : "aktiv")</strong>
+                        @if (s.Cancelled > 0) { <br /><span class="small muted">Gekündigt am @ForumTime.Date(s.Cancelled) – wird nicht mehr verlängert. Dein Zugang bleibt bis zum Ende der bezahlten Zeit.</span> }
+                        else if (s.CanCancel(_now)) { <br /><span class="small muted">Verlängert sich automatisch, bis du kündigst.</span> }
+                    </p>
+                    @if (s.CanCancel(_now))
+                    {
+                        <form method="post" action="/premium/cancel/@s.SubscriptionId" class="inline" data-enhance="false">
+                            <AntiforgeryToken />
+                            <button type="submit" class="btn btn-sm" data-confirm="Abo wirklich kündigen? Es wird dann nicht mehr verlängert.">Abo kündigen</button>
+                        </form>
+                    }
+                </div>
             }
             @if (_forum != null) { <p style="margin:0"><a class="btn btn-primary" href="@Links.Forum(_forum)">Weiter zu „@_forum.DisplayTitle“</a></p> }
         </section>
@@ -35,6 +49,18 @@
     [SupplyParameterFromQuery(Name = "forum")] public int? ForumId { get; set; }
     [SupplyParameterFromQuery(Name = "done")] public string? Done { get; set; }
     [SupplyParameterFromQuery(Name = "error")] public string? Error { get; set; }
+    [SupplyParameterFromQuery(Name = "cancel")] public string? CancelQ { get; set; }
+    private long _now = ForumTime.Now;
+    private string? _cancelMsg => CancelQ switch
+    {
+        "ok" => "Dein Abo wurde gekündigt und wird nicht mehr verlängert.",
+        "already" => "Dein Abo war bereits gekündigt bzw. beendet.",
+        "nomembership" => "Zu dieser Buchung gibt es kein laufendes Abo – sie verlängert sich nicht automatisch.",
+        "notfound" => "Das Abo wurde beim Zahlungsdienst nicht gefunden. Bitte wende dich an das Team.",
+        "notpossible" => "Dieses Abo kann hier nicht gekündigt werden.",
+        "failed" => "Die Kündigung hat nicht geklappt. Bitte versuche es später erneut oder wende dich an das Team.",
+        _ => null,
+    };
 
     private bool _loaded;
     private BoardSnapshot? _snap;

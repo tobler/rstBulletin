@@ -152,6 +152,8 @@ public sealed class Schema(Db db)
         await Col(Tables.OwnPlan, "rst_paymenttype", "`rst_paymenttype` INT NOT NULL DEFAULT 1");
         await Col(Tables.OwnPlan, "rst_rebilling", "`rst_rebilling` TINYINT NOT NULL DEFAULT 0");
         await Col(Tables.OwnPlan, "rst_rebillingdays", "`rst_rebillingdays` INT NOT NULL DEFAULT 0");
+        await Col(Tables.OwnSubscription, "rst_session", "`rst_session` VARCHAR(100) NOT NULL DEFAULT ''");
+        await Col(Tables.OwnSubscription, "cancelled", "`cancelled` INT UNSIGNED NOT NULL DEFAULT 0");
 
         // vB-Tabellen für Umfragen und Reputation (in übernommenen vB-Datenbanken vorhanden, bei Neuinstallationen anlegen)
         var t = db.T;

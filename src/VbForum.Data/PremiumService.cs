@@ -137,6 +137,14 @@ public sealed class PremiumService(Db db, BoardCache cache, ForumAdminService ad
 
         /// <summary>Laufzeit des gebuchten Modells in Monaten (0 = lebenslang, -1 = kein Modell bekannt).</summary>
         public int PlanMonths { get; set; } = -1;
+        public bool PlanRebilling { get; set; }
+        /// <summary>rstpay-Session der Buchung (für die Kündigung über rstpay).</summary>
+        public string RstSession { get; set; } = "";
+        /// <summary>Zeitpunkt, zu dem der Kunde bei rstpay gekündigt hat (0 = nicht gekündigt).</summary>
+        public long Cancelled { get; set; }
+
+        /// <summary>Kann der Kunde dieses Abo im Forum kündigen? (rstpay, wiederkehrend oder unbekanntes Modell, noch nicht gekündigt)</summary>
+        public bool CanCancel(long now) => IsActive(now) && Source == "rstpay" && PlanMonths != 0 && Cancelled == 0 && (PlanRebilling || PlanId == 0);
 
         public bool IsActive(long now) => Status == "active" && (EndDate == 0 || EndDate > now);
 
@@ -156,10 +164,29 @@ public sealed class PremiumService(Db db, BoardCache cache, ForumAdminService ad
         CAST(s.planid AS SIGNED) AS PlanId, IFNULL(p.title, '') AS PlanTitle, CAST(s.groupid AS SIGNED) AS GroupId,
         CAST(s.startdate AS SIGNED) AS StartDate, CAST(s.enddate AS SIGNED) AS EndDate, s.status AS Status, s.reference AS Reference,
         s.source AS Source, CAST(s.created AS SIGNED) AS Created, CAST(s.updated AS SIGNED) AS Updated,
-        CAST(IFNULL(p.months, -1) AS SIGNED) AS PlanMonths
+        CAST(IFNULL(p.months, -1) AS SIGNED) AS PlanMonths, IFNULL(p.rst_rebilling, 0) <> 0 AS PlanRebilling,
+        s.rst_session AS RstSession, CAST(s.cancelled AS SIGNED) AS Cancelled
         """;
 
     private string SubFrom => $"FROM {Tables.OwnSubscription} s LEFT JOIN {db.T.User} u ON u.userid = s.userid LEFT JOIN {Tables.OwnPlan} p ON p.planid = s.planid";
+
+    public async Task<Subscription?> SubscriptionAsync(long id)
+    {
+        await using var c = await db.OpenAsync();
+        return await c.QueryFirstOrDefaultAsync<Subscription>($"SELECT {SubCols} {SubFrom} WHERE s.subscriptionid = @id", new { id });
+    }
+
+    public async Task SetRstSessionAsync(long subscriptionId, string session)
+    {
+        await using var c = await db.OpenAsync();
+        await c.ExecuteAsync($"UPDATE {Tables.OwnSubscription} SET rst_session = @session WHERE subscriptionid = @subscriptionId", new { subscriptionId, session });
+    }
+
+    public async Task MarkCancelledAsync(long subscriptionId)
+    {
+        await using var c = await db.OpenAsync();
+        await c.ExecuteAsync($"UPDATE {Tables.OwnSubscription} SET cancelled = @now, updated = @now WHERE subscriptionid = @subscriptionId", new { subscriptionId, now = ForumTime.Now });
+    }
 
     public async Task<List<Subscription>> UserSubscriptionsAsync(long userId)
     {

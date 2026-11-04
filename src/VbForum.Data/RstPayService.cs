@@ -80,6 +80,80 @@ public sealed class RstPayService(Db db, BoardCache cache, PremiumService premiu
         }
     }
 
+    // ---------- Kündigung ----------
+
+    /// <summary>
+    /// rstpay-Session zur Buchung merken (für die spätere Kündigung). Bevorzugt aus der Rückmeldung; sonst die letzte Session,
+    /// die das Forum für diesen Benutzer angefordert hat (steht im Protokoll als „session“), sonst die des bisherigen Abos.
+    /// </summary>
+    private async Task RememberSessionAsync(PremiumService.Subscription sub, long userId, params string[] fromCallback)
+    {
+        var session = fromCallback.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? "";
+        await using var c = await db.OpenAsync();
+        if (session.Length == 0 && string.IsNullOrEmpty(sub.RstSession))
+            session = await c.ExecuteScalarAsync<string?>($"""
+                SELECT transaction_id FROM {Tables.OwnPayment}
+                WHERE action = 'session' AND userid = @userId AND transaction_id <> '' ORDER BY dateline DESC, paymentid DESC LIMIT 1
+                """, new { userId }) ?? "";
+        if (session.Length > 0 && session.Length <= 100 && session != sub.RstSession)
+            await premium.SetRstSessionAsync(sub.SubscriptionId, session);
+    }
+
+    public sealed record CancelResult(bool Ok, string Message, string? Detail = null);
+
+    /// <summary>Abo bei rstpay kündigen (api/cancelmembership). Antworten: „OK: …“ oder „ERROR: …“ als Klartext.</summary>
+    public async Task<CancelResult> CancelMembershipAsync(PremiumService.Subscription sub, ForumUser by)
+    {
+        var s = (await cache.GetAsync()).Settings;
+        if (!s.RstPayConfigured) return new(false, "Die Kündigung ist gerade nicht möglich. Bitte wende dich an das Team.", "rstpay ist nicht eingerichtet.");
+        var session = sub.RstSession;
+        if (string.IsNullOrWhiteSpace(session))
+        {
+            await using var c = await db.OpenAsync();
+            session = await c.ExecuteScalarAsync<string?>($"""
+                SELECT transaction_id FROM {Tables.OwnPayment}
+                WHERE action = 'session' AND userid = @uid AND transaction_id <> '' AND dateline <= @start + 86400
+                ORDER BY dateline DESC, paymentid DESC LIMIT 1
+                """, new { uid = sub.UserId, start = sub.StartDate }) ?? "";
+        }
+        if (string.IsNullOrWhiteSpace(session))
+            return new(false, "Zu diesem Abo ist keine rstpay-Buchung bekannt. Bitte wende dich an das Team.", "Keine Session-ID gespeichert.");
+
+        static string E(string v) => Uri.EscapeDataString(v);
+        var baseUrl = s.RstPayBaseUrl.TrimEnd('/');
+        var url = $"{baseUrl}/api/cancelmembership?sessionid={E(session)}&merchantid={E(s.RstPayMerchantId)}&merchantkey={E(s.RstPayMerchantKey)}";
+        string answer;
+        try
+        {
+            using var resp = await Http.GetAsync(url);
+            answer = (await resp.Content.ReadAsStringAsync()).Trim();
+            if (answer.Length > 300) answer = answer[..300];
+            if (!resp.IsSuccessStatusCode && !answer.StartsWith("OK", StringComparison.OrdinalIgnoreCase))
+                answer = $"ERROR: HTTP {(int)resp.StatusCode} {answer}";
+        }
+        catch (Exception ex)
+        {
+            answer = "ERROR: rstpay nicht erreichbar – " + (ex is TaskCanceledException ? "Zeitüberschreitung" : ex.GetBaseException().Message);
+        }
+        var ok = answer.StartsWith("OK", StringComparison.OrdinalIgnoreCase);
+        await LogAsync("cancel_request", session, sub.UserId, by.Username, "", "", "", "", (ok ? "" : "Fehler: ") + answer);
+        if (ok)
+        {
+            await premium.MarkCancelledAsync(sub.SubscriptionId);
+            return new(true, answer.Contains("already", StringComparison.OrdinalIgnoreCase)
+                ? "Das Abo war bei rstpay bereits gekündigt bzw. beendet."
+                : "Dein Abo wurde gekündigt. Es wird nicht mehr verlängert.", answer);
+        }
+        var msg = answer switch
+        {
+            var a when a.Contains("No membership", StringComparison.OrdinalIgnoreCase) => "Zu dieser Buchung gibt es kein laufendes Abo – sie verlängert sich nicht automatisch.",
+            var a when a.Contains("Membership not found", StringComparison.OrdinalIgnoreCase) || a.Contains("Booking not found", StringComparison.OrdinalIgnoreCase)
+                => "Das Abo wurde bei rstpay nicht gefunden. Bitte wende dich an das Team.",
+            _ => "Die Kündigung hat nicht geklappt. Bitte versuche es später erneut oder wende dich an das Team.",
+        };
+        return new(false, msg, answer);
+    }
+
     // ---------- Rückmeldung ----------
 
     /// <summary>Verarbeitet eine Rückmeldung. Liefert den Antworttext („OK …“ oder „NOK“).</summary>
@@ -111,6 +185,7 @@ public sealed class RstPayService(Db db, BoardCache cache, PremiumService premiu
                     Reference = transactionId, Source = "rstpay", OpenEnded = true, SetPrimary = true,
                 });
                 result = r.Ok ? $"Premium (Gruppe {r.Subscription!.GroupId}){(plan != null ? $", Modell {plan.Title}" : "")}" : r.Error!;
+                if (r.Ok) await RememberSessionAsync(r.Subscription!, user.UserId, V("sessionid"), V("sessid"), V("session_id"), V("session"));
                 break;
 
             case "free_booking":
