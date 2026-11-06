@@ -489,3 +489,7 @@ html[data-theme="dark"] .theme-toggle .moon { display: none; } html[data-theme="
 .ad.ad-postbody { margin-top: 4px; background: var(--head); border-style: dashed; }
 .ad-row { padding: 10px 20px; border-bottom: 1px solid var(--border-soft); background: var(--card); }
 .ad-row .ad { border: 0; padding-top: 18px; }
+
+/* Sprungziel beim Blättern: unter der klebenden Kopfzeile ausrichten, ohne Fokusrahmen */
+main article.post, main details.post-ignored, main .thread-row { scroll-margin-top: 76px; }
+main article.post:focus, main .thread-row:focus, main details.post-ignored:focus { outline: none; }

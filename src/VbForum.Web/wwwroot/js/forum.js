@@ -171,6 +171,30 @@
   });
 })();
 
+// Blättern: Nach einem Klick in der Seitennavigation zum ersten Eintrag der neuen Seite springen.
+// (Blazors „enhanced navigation“ behält sonst die Scrollposition bei, wenn sich nur ?page= ändert.)
+(function () {
+  var pending = false;
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('.pager a[href]');
+    if (a && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0 && !a.classList.contains('on')) pending = true;
+  }, true);
+  function jump() {
+    if (!pending) return;
+    pending = false;
+    var target = document.querySelector('main article.post, main details.post-ignored') ||
+                 document.querySelector('main .thread-row') || document.querySelector('main');
+    if (!target) return;
+    target.scrollIntoView({ block: 'start' });
+    if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+    target.focus({ preventScroll: true });
+  }
+  if (window.Blazor && Blazor.addEventListener) Blazor.addEventListener('enhancedload', jump);
+  else document.addEventListener('DOMContentLoaded', function () {
+    if (window.Blazor && Blazor.addEventListener) Blazor.addEventListener('enhancedload', jump);
+  });
+})();
+
 // Hinweisleiste wegklicken (Cookie 1 Jahr)
 (function () {
   document.addEventListener('click', function (e) {
